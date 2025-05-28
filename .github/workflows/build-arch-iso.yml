@@ -1,0 +1,132 @@
+name: Build Custom Arch Linux ISO with arch.sh script
+
+on:
+  # Allows you to run this workflow manually from the Actions tab in GitHub
+  workflow_dispatch:
+    inputs:
+      build_date:
+        description: 'ISO Build Timestamp (YYYYMMDD_HHMMSS, default now)'
+        required: false
+        type: string
+        default: ${{ format('{0:%Y%m%d_%H%M%S}', github.event.repository.pushed_at) }}
+        # Default to the time of the last push if not manually provided, or current UTC time
+        # This will be overridden by the actual current time in the build step for better accuracy.
+      profile_name:
+        description: 'Name of the archiso profile to use (e.g., "releng" or your custom profile folder)'
+        required: false
+        type: string
+        default: 'releng' # Default to the standard releng profile if not specified
+
+jobs:
+  build_iso:
+    runs-on: ubuntu-latest # Host OS for running the Docker container
+    container:
+      # Use an official Arch Linux Docker image as the build environment
+      # This ensures all Arch-specific tools and dependencies are readily available.
+      image: archlinux/archlinux:latest
+      # mkarchiso often requires privileged mode for chroot and loop device setup
+      options: --privileged
+
+    timeout-minutes: 120 # ISO builds can take a long time (up to 2 hours)
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      # If your custom profile is in a submodule, make sure to enable it here
+      # with:
+      #   submodules: true
+
+    - name: Install archiso and build dependencies within the container
+      run: |
+        # Update pacman and install archiso, git, squashfs-tools, xorriso, dosfstools, and curl
+        # curl is needed to download the arch.sh script
+        pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl
+
+    - name: Prepare Archiso Build Profile and Add Custom Script
+      id: prepare_profile
+      run: |
+        PROFILE_DIR="archiso_build_profile"
+        INPUT_PROFILE_NAME="${{ github.event.inputs.profile_name }}"
+        SCRIPT_URL="https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh"
+        SCRIPT_FILENAME="arch.sh"
+        SCRIPT_DEST_PATH="$PROFILE_DIR/airootfs/root/$SCRIPT_FILENAME" # Destination inside the ISO's root filesystem
+
+        # If user provides a custom profile name, assume it's a directory in the repo
+        if [ -d "./$INPUT_PROFILE_NAME" ]; then
+          echo "Using custom profile from repository: ./$INPUT_PROFILE_NAME"
+          cp -r "./$INPUT_PROFILE_NAME" "$PROFILE_DIR"
+        elif [ -d "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" ]; then
+          # Otherwise, use an official archiso profile (like 'releng')
+          echo "Using official archiso profile: /usr/share/archiso/configs/$INPUT_PROFILE_NAME"
+          cp -r "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" "$PROFILE_DIR"
+        else
+          echo "Error: Profile '$INPUT_PROFILE_NAME' not found in repository or official configs."
+          exit 1
+        fi
+
+        # Create the destination directory inside the profile's airootfs if it doesn't exist
+        mkdir -p "$(dirname "$SCRIPT_DEST_PATH")"
+
+        # Download the arch.sh script
+        echo "Downloading $SCRIPT_URL to $SCRIPT_DEST_PATH"
+        curl -sSL "$SCRIPT_URL" -o "$SCRIPT_DEST_PATH"
+
+        # Make the script executable
+        echo "Setting executable permissions for $SCRIPT_DEST_PATH"
+        chmod +x "$SCRIPT_DEST_PATH"
+
+        # The 'update the Arch ISO' part is handled here:
+        # `mkarchiso` will automatically use the *latest* packages from Arch Linux repositories
+        # based on the `packages.x86_64` (and other) files within your chosen profile.
+        # You do not need to run `pacman -Syu` explicitly in this step for the ISO's content.
+
+        # If you want to modify the profile further (e.g., add more packages)
+        # echo "your-new-package" >> "$PROFILE_DIR/packages.x86_64"
+
+        echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Set ISO filename and output directory
+      id: iso_info
+      shell: bash
+      run: |
+        CURRENT_BUILD_DATE=$(date '+%Y%m%d_%H%M%S')
+        ISO_VERSION="${GITHUB_REF_NAME:-$(echo $GITHUB_SHA | cut -c1-7)}" # Branch name or short commit hash
+        ISO_FILENAME="archlinux-custom-${ISO_VERSION}-${CURRENT_BUILD_DATE}.iso"
+        ISO_OUTPUT_DIR="out" # Directory where mkarchiso will place the ISO
+
+        echo "ISO_FILENAME=$ISO_FILENAME" >> "$GITHUB_OUTPUT"
+        echo "ISO_OUTPUT_DIR=$ISO_OUTPUT_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Build Arch Linux ISO
+      # This step requires root privileges within the container, which is handled by 'options: --privileged'
+      run: |
+        mkarchiso -v -o ${{ steps.iso_info.outputs.ISO_OUTPUT_DIR }} ${{ steps.prepare_profile.outputs.PROFILE_DIR }}/
+      # We run mkarchiso from the root of the workspace, pointing it to the prepared profile directory.
+
+    - name: List generated ISOs (for debugging)
+      run: ls -lh ${{ steps.iso_info.outputs.ISO_OUTPUT_DIR }}
+
+    - name: Upload ISO as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: archlinux-custom-iso-${{ steps.iso_info.outputs.ISO_FILENAME }}
+        path: ${{ steps.iso_info.outputs.ISO_OUTPUT_DIR }}/${{ steps.iso_info.outputs.ISO_FILENAME }}
+        retention-days: 7 # Keep the artifact for 7 days
+
+    - name: Create GitHub Release (Optional)
+      # Only create a release if the workflow runs on the 'main' branch
+      # This prevents creating releases for every test build on feature branches.
+      if: github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ${{ steps.iso_info.outputs.ISO_OUTPUT_DIR }}/${{ steps.iso_info.outputs.ISO_FILENAME }}
+        tag_name: "iso-${{ steps.iso_info.outputs.ISO_FILENAME }}" # A unique tag for the release
+        name: "Arch Linux Custom ISO ${{ steps.iso_info.outputs.ISO_FILENAME }}"
+        body: |
+          Custom Arch Linux ISO built on ${{ steps.iso_info.outputs.ISO_FILENAME }}
+          using the ${{ github.event.inputs.profile_name }} archiso profile.
+          Includes the 'arch.sh' script in /root/arch.sh.
+          Based on Arch Linux packages available at build time.
+        prerelease: true # Mark as pre-release for automated/daily builds
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Automatically provided by GitHub
