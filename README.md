@@ -1,5 +1,11 @@
 # arch-iso
-Build an updated Archlinux ISO, with added packages.  
+### What it does
+Builds an updated Archlinux ISO, with added packages.  
+
+### How to download
+Download the latest ISO from [releases](https://github.com/georgeabr/arch-iso/releases), assets.  
+File names should be like this - `archlinux-2025.05.28-x86_64.iso`.
+### How to use
 Use `bash arch.sh` to start the custom installer.  
 ```bash
 bash arch.sh
