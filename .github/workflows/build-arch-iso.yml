@@ -1,4 +1,4 @@
-name: Build Custom Arch Linux ISO with arch.sh script
+name: Build Custom Arch Linux ISO with arch.sh, htop, iotop
 
 on:
   workflow_dispatch:
@@ -13,9 +13,8 @@ on:
         type: string
         default: 'releng'
 
-# ADDED: Permissions block for creating releases
 permissions:
-  contents: write # This grants permission to create and edit releases
+  contents: write
 
 jobs:
   build_iso:
@@ -31,11 +30,13 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install archiso and build dependencies within the container
+      shell: bash
       run: |
         pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl
 
-    - name: Prepare Archiso Build Profile and Add Custom Script
+    - name: Prepare Archiso Build Profile, Add Custom Script, Set Root Shell, and Add Extra Packages
       id: prepare_profile
+      shell: bash
       run: |
         PROFILE_DIR="archiso_build_profile"
         INPUT_PROFILE_NAME="${{ github.event.inputs.profile_name }}"
@@ -43,6 +44,7 @@ jobs:
         SCRIPT_FILENAME="arch.sh"
         SCRIPT_DEST_PATH="$PROFILE_DIR/airootfs/root/$SCRIPT_FILENAME"
 
+        # 1. Copy the chosen archiso profile
         if [ -d "./$INPUT_PROFILE_NAME" ]; then
           echo "Using custom profile from repository: ./$INPUT_PROFILE_NAME"
           cp -r "./$INPUT_PROFILE_NAME" "$PROFILE_DIR"
@@ -54,11 +56,33 @@ jobs:
           exit 1
         fi
 
+        # 2. Add the custom script (arch.sh)
         mkdir -p "$(dirname "$SCRIPT_DEST_PATH")"
         echo "Downloading $SCRIPT_URL to $SCRIPT_DEST_PATH"
         curl -sSL "$SCRIPT_URL" -o "$SCRIPT_DEST_PATH"
         echo "Setting executable permissions for $SCRIPT_DEST_PATH"
         chmod +x "$SCRIPT_DEST_PATH"
+
+        # 3. Ensure root's default shell in the ISO is /bin/bash
+        PASSWD_FILE="$PROFILE_DIR/airootfs/etc/passwd"
+        echo "Ensuring root's shell in $PASSWD_FILE is /bin/bash"
+        sed -i 's/^root:x:0:0:root:\/root:\/.*$/root:x:0:0:root:\/root:\/bin\/bash/' "$PASSWD_FILE"
+        grep '^root:' "$PASSWD_FILE" # For logging, to confirm the change
+
+        # 4. Add htop and iotop to the list of packages to be installed in the ISO
+        # These packages will be pulled from Arch Linux repositories during the mkarchiso build.
+        PACKAGES_FILE="$PROFILE_DIR/packages.x86_64"
+        if [ -f "$PACKAGES_FILE" ]; then
+            echo "Adding htop and iotop to $PACKAGES_FILE"
+            echo "htop" >> "$PACKAGES_FILE"
+            echo "iotop" >> "$PACKAGES_FILE"
+            # Verify addition (for debugging in logs)
+            grep -E '^(htop|iotop)$' "$PACKAGES_FILE" || echo "htop or iotop not found in $PACKAGES_FILE after append. Check file format."
+        else
+            echo "Warning: $PACKAGES_FILE not found. Cannot add htop or iotop."
+            # If you are using a custom profile that names its package file differently,
+            # you would need to adjust PACKAGES_FILE accordingly.
+        fi
 
         echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
 
@@ -66,7 +90,6 @@ jobs:
       id: build_metadata
       shell: bash
       run: |
-        # Use user-provided build_date if available, otherwise generate current timestamp
         if [ -n "${{ github.event.inputs.build_date }}" ]; then
           BUILD_TIMESTAMP="${{ github.event.inputs.build_date }}"
         else
@@ -74,18 +97,18 @@ jobs:
         fi
 
         ISO_VERSION_IDENTIFIER="${GITHUB_REF_NAME:-$(echo $GITHUB_SHA | cut -c1-7)}"
-        ISO_OUTPUT_DIR="out" # Directory where mkarchiso will place the ISO
+        ISO_OUTPUT_DIR="out"
 
         echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> "$GITHUB_OUTPUT"
         echo "ISO_VERSION_IDENTIFIER=$ISO_VERSION_IDENTIFIER" >> "$GITHUB_OUTPUT"
         echo "ISO_OUTPUT_DIR=$ISO_OUTPUT_DIR" >> "$GITHUB_OUTPUT"
 
     - name: Build Arch Linux ISO
-      id: build_iso_step # Add ID to capture output from this step
+      id: build_iso_step
+      shell: bash
       run: |
         mkarchiso -v -o ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} ${{ steps.prepare_profile.outputs.PROFILE_DIR }}/
         
-        # FIND THE ACTUAL GENERATED ISO FILENAME
         ACTUAL_ISO_FILE=$(find ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} -name "*.iso" -print -quit)
         if [ -z "$ACTUAL_ISO_FILE" ]; then
           echo "Error: No ISO file found in ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}"
@@ -95,12 +118,12 @@ jobs:
         echo "ACTUAL_ISO_FILE=$ACTUAL_ISO_FILE" >> "$GITHUB_OUTPUT"
 
     - name: List generated ISOs (for debugging)
+      shell: bash
       run: ls -lh ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}
 
     - name: Upload ISO as Artifact
       uses: actions/upload-artifact@v4
       with:
-        # Use the actual file found in the previous step
         name: archlinux-custom-iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
         path: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
         retention-days: 7
@@ -109,15 +132,15 @@ jobs:
       if: github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
-        # Use the actual file found in the build step
         files: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
-        # Use the generated timestamp for a clean tag and name
         tag_name: "iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
         name: "Arch Linux Custom ISO ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
         body: |
           Custom Arch Linux ISO built on ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
           using the ${{ github.event.inputs.profile_name }} archiso profile.
           Includes the 'arch.sh' script in /root/arch.sh.
+          Root user's default shell set to /bin/bash.
+          Now includes 'htop' and 'iotop' packages.
           Based on Arch Linux packages available at build time.
         prerelease: true
       env:
