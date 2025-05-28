@@ -7,13 +7,15 @@ on:
         description: 'ISO Build Timestamp (YYYYMMDD_HHMMSS, leave empty for current time)'
         required: false
         type: string
-        # Removed the problematic default value here.
-        # The timestamp will be generated in the step below if not provided.
       profile_name:
         description: 'Name of the archiso profile to use (e.g., "releng" or your custom profile folder)'
         required: false
         type: string
         default: 'releng'
+
+# ADDED: Permissions block for creating releases
+permissions:
+  contents: write # This grants permission to create and edit releases
 
 jobs:
   build_iso:
@@ -60,49 +62,60 @@ jobs:
 
         echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
 
-    - name: Set ISO filename and output directory
-      id: iso_info
+    - name: Define Build Metadata and Output Directory
+      id: build_metadata
       shell: bash
       run: |
         # Use user-provided build_date if available, otherwise generate current timestamp
         if [ -n "${{ github.event.inputs.build_date }}" ]; then
-          CURRENT_BUILD_DATE="${{ github.event.inputs.build_date }}"
+          BUILD_TIMESTAMP="${{ github.event.inputs.build_date }}"
         else
-          CURRENT_BUILD_DATE=$(date '+%Y%m%d_%H%M%S')
+          BUILD_TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
         fi
 
-        ISO_VERSION="${GITHUB_REF_NAME:-$(echo $GITHUB_SHA | cut -c1-7)}"
-        ISO_FILENAME="archlinux-custom-${ISO_VERSION}-${CURRENT_BUILD_DATE}.iso"
-        ISO_OUTPUT_DIR="out"
+        ISO_VERSION_IDENTIFIER="${GITHUB_REF_NAME:-$(echo $GITHUB_SHA | cut -c1-7)}"
+        ISO_OUTPUT_DIR="out" # Directory where mkarchiso will place the ISO
 
-        echo "ISO_FILENAME=$ISO_FILENAME" >> "$GITHUB_OUTPUT"
+        echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> "$GITHUB_OUTPUT"
+        echo "ISO_VERSION_IDENTIFIER=$ISO_VERSION_IDENTIFIER" >> "$GITHUB_OUTPUT"
         echo "ISO_OUTPUT_DIR=$ISO_OUTPUT_DIR" >> "$GITHUB_OUTPUT"
-        echo "CURRENT_BUILD_DATE=$CURRENT_BUILD_DATE" >> "$GITHUB_OUTPUT" # Export for release step
 
     - name: Build Arch Linux ISO
+      id: build_iso_step # Add ID to capture output from this step
       run: |
-        mkarchiso -v -o ${{ steps.iso_info.outputs.ISO_OUTPUT_DIR }} ${{ steps.prepare_profile.outputs.PROFILE_DIR }}/
+        mkarchiso -v -o ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} ${{ steps.prepare_profile.outputs.PROFILE_DIR }}/
+        
+        # FIND THE ACTUAL GENERATED ISO FILENAME
+        ACTUAL_ISO_FILE=$(find ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} -name "*.iso" -print -quit)
+        if [ -z "$ACTUAL_ISO_FILE" ]; then
+          echo "Error: No ISO file found in ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}"
+          exit 1
+        fi
+        echo "Found ISO: $ACTUAL_ISO_FILE"
+        echo "ACTUAL_ISO_FILE=$ACTUAL_ISO_FILE" >> "$GITHUB_OUTPUT"
 
     - name: List generated ISOs (for debugging)
-      run: ls -lh ${{ steps.iso_info.outputs.ISO_OUTPUT_DIR }}
+      run: ls -lh ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}
 
     - name: Upload ISO as Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: archlinux-custom-iso-${{ steps.iso_info.outputs.ISO_FILENAME }}
-        path: ${{ steps.iso_info.outputs.ISO_OUTPUT_DIR }}/${{ steps.iso_info.outputs.ISO_FILENAME }}
+        # Use the actual file found in the previous step
+        name: archlinux-custom-iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
+        path: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
         retention-days: 7
 
     - name: Create GitHub Release (Optional)
       if: github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
-        files: ${{ steps.iso_info.outputs.ISO_OUTPUT_DIR }}/${{ steps.iso_info.outputs.ISO_FILENAME }}
-        # Use the actual generated/provided build date from the step's output
-        tag_name: "iso-${{ steps.iso_info.outputs.CURRENT_BUILD_DATE }}"
-        name: "Arch Linux Custom ISO ${{ steps.iso_info.outputs.CURRENT_BUILD_DATE }}"
+        # Use the actual file found in the build step
+        files: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
+        # Use the generated timestamp for a clean tag and name
+        tag_name: "iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
+        name: "Arch Linux Custom ISO ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
         body: |
-          Custom Arch Linux ISO built on ${{ steps.iso_info.outputs.CURRENT_BUILD_DATE }}
+          Custom Arch Linux ISO built on ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
           using the ${{ github.event.inputs.profile_name }} archiso profile.
           Includes the 'arch.sh' script in /root/arch.sh.
           Based on Arch Linux packages available at build time.
