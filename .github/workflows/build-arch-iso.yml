@@ -175,6 +175,6 @@ jobs:
           Now includes 'htop' and 'iotop' packages.
           Based on Arch Linux packages available at build time.
           Kernel version (from ISO): ${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}
-        prerelease: true
+        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
