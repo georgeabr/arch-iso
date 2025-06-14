@@ -32,7 +32,7 @@ jobs:
     - name: Install archiso and build dependencies within the container
       shell: bash
       run: |
-        pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl
+        pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux
 
     - name: Prepare Archiso Build Profile, Add Custom Script, Set Root Shell, and Add Extra Packages
       id: prepare_profile
@@ -70,18 +70,14 @@ jobs:
         grep '^root:' "$PASSWD_FILE" # For logging, to confirm the change
 
         # 4. Add htop and iotop to the list of packages to be installed in the ISO
-        # These packages will be pulled from Arch Linux repositories during the mkarchiso build.
         PACKAGES_FILE="$PROFILE_DIR/packages.x86_64"
         if [ -f "$PACKAGES_FILE" ]; then
             echo "Adding htop and iotop to $PACKAGES_FILE"
             echo "htop" >> "$PACKAGES_FILE"
             echo "iotop" >> "$PACKAGES_FILE"
-            # Verify addition (for debugging in logs)
             grep -E '^(htop|iotop)$' "$PACKAGES_FILE" || echo "htop or iotop not found in $PACKAGES_FILE after append. Check file format."
         else
             echo "Warning: $PACKAGES_FILE not found. Cannot add htop or iotop."
-            # If you are using a custom profile that names its package file differently,
-            # you would need to adjust PACKAGES_FILE accordingly.
         fi
 
         echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
@@ -117,6 +113,42 @@ jobs:
         echo "Found ISO: $ACTUAL_ISO_FILE"
         echo "ACTUAL_ISO_FILE=$ACTUAL_ISO_FILE" >> "$GITHUB_OUTPUT"
 
+    - name: Extract Kernel Version from ISO
+      id: extract_kernel_version
+      shell: bash
+      run: |
+        ISO_FILE="${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}"
+        MOUNT_POINT="/mnt/iso"
+        mkdir -p "$MOUNT_POINT"
+
+        echo "Mounting ISO: $ISO_FILE to $MOUNT_POINT"
+        mount -o loop "$ISO_FILE" "$MOUNT_POINT"
+
+        KERNEL_PATH=$(find "$MOUNT_POINT" -name "vmlinuz*" | head -n 1)
+        KERNEL_VERSION="Unknown"
+
+        if [ -n "$KERNEL_PATH" ]; then
+          echo "Found kernel image at: $KERNEL_PATH"
+          KERNEL_INFO=$(file "$KERNEL_PATH")
+          # Extract the version string from the file command output (e.g., "version 6.8.9-arch1-2")
+          # This regex specifically looks for "version X.Y.Z-..."
+          EXTRACTED_VERSION=$(echo "$KERNEL_INFO" | grep -oP 'version \K[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -n 1)
+          if [ -n "$EXTRACTED_VERSION" ]; then
+            KERNEL_VERSION="$EXTRACTED_VERSION"
+          else
+            echo "Could not extract specific version from: $KERNEL_INFO"
+          fi
+        else
+          echo "Could not find vmlinuz file in the ISO."
+        fi
+
+        echo "Extracted Kernel Version: $KERNEL_VERSION"
+        echo "KERNEL_VERSION_ISO=$KERNEL_VERSION" >> "$GITHUB_OUTPUT"
+
+        echo "Unmounting ISO"
+        umount "$MOUNT_POINT" || true # Use || true to prevent job failure if unmount fails (e.g., already unmounted)
+        rmdir "$MOUNT_POINT" || true
+
     - name: List generated ISOs (for debugging)
       shell: bash
       run: ls -lh ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}
@@ -142,6 +174,7 @@ jobs:
           Root user's default shell set to /bin/bash.
           Now includes 'htop' and 'iotop' packages.
           Based on Arch Linux packages available at build time.
+          Kernel version (from ISO): ${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}
         prerelease: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
