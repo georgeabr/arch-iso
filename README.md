@@ -1,6 +1,6 @@
 # arch-iso
 ### What it does
-Builds an updated Archlinux ISO, with added packages.  
+Builds an updated Archlinux ISO, with added packages and a custom installer.  
 
 ### How to download
 Download the latest ISO from [releases](https://github.com/georgeabr/arch-iso/releases), assets.  
