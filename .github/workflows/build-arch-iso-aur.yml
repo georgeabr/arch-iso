@@ -115,9 +115,10 @@ jobs:
         # Clone into the builder's home directory
         sudo -u $BUILD_USER git clone https://aur.archlinux.org/wezterm-git.git "$BUILD_HOME/wezterm-git"
 
-        echo "Building wezterm-git package as $BUILD_USER..."
+        echo "Building wezterm-git package as $BUILD_USER using parallel build..."
         # Switch to the builder user to run makepkg
-        sudo -u $BUILD_USER bash -c "cd \"$BUILD_HOME/wezterm-git\" && makepkg -s --noconfirm --skippgpcheck --cleanbuild --needed"
+        # Using nproc to determine the number of cores for parallel compilation
+        sudo -u $BUILD_USER bash -c "cd \"$BUILD_HOME/wezterm-git\" && makepkg -s --noconfirm --skippgpcheck --cleanbuild --needed -j$(nproc)"
 
         if [ $? -ne 0 ]; then
           echo "Error: Failed to build wezterm-git package."
