@@ -1,0 +1,241 @@
+name: Build Custom Arch Linux ISO with arch.sh, htop, iotop, and wezterm-git
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_date:
+        description: 'ISO Build Timestamp (YYYYMMDD_HHMMSS, leave empty for current time)'
+        required: false
+        type: string
+      profile_name:
+        description: 'Name of the archiso profile to use (e.g., "releng" or your custom profile folder)'
+        required: false
+        type: string
+        default: 'releng'
+
+permissions:
+  contents: write
+
+jobs:
+  build_iso:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux/archlinux:latest
+      options: --privileged
+
+    timeout-minutes: 120 # Increased timeout as building wezterm-git can take time
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install archiso and build dependencies within the container
+      shell: bash
+      run: |
+        # Install archiso, git, squashfs-tools, xorriso, dosfstools, curl, util-linux
+        # Also install base-devel for building AUR packages
+        pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux base-devel
+
+    - name: Prepare Archiso Build Profile, Add Custom Script, Set Root Shell, and Add Extra Packages
+      id: prepare_profile
+      shell: bash
+      run: |
+        PROFILE_DIR="archiso_build_profile"
+        INPUT_PROFILE_NAME="${{ github.event.inputs.profile_name }}"
+        SCRIPT_URL="https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh"
+        SCRIPT_FILENAME="arch.sh"
+        SCRIPT_DEST_PATH="$PROFILE_DIR/airootfs/root/$SCRIPT_FILENAME"
+
+        # 1. Copy the chosen archiso profile
+        if [ -d "./$INPUT_PROFILE_NAME" ]; then
+          echo "Using custom profile from repository: ./$INPUT_PROFILE_NAME"
+          cp -r "./$INPUT_PROFILE_NAME" "$PROFILE_DIR"
+        elif [ -d "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" ]; then
+          echo "Using official archiso profile: /usr/share/archiso/configs/$INPUT_PROFILE_NAME"
+          cp -r "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" "$PROFILE_DIR"
+        else
+          echo "Error: Profile '$INPUT_PROFILE_NAME' not found in repository or official configs."
+          exit 1
+        fi
+
+        # 2. Add the custom script (arch.sh)
+        mkdir -p "$(dirname "$SCRIPT_DEST_PATH")"
+        echo "Downloading $SCRIPT_URL to $SCRIPT_DEST_PATH"
+        curl -sSL "$SCRIPT_URL" -o "$SCRIPT_DEST_PATH"
+        echo "Setting executable permissions for $SCRIPT_DEST_PATH"
+        chmod +x "$SCRIPT_DEST_PATH"
+
+        # 3. Ensure root's default shell in the ISO is /bin/bash
+        PASSWD_FILE="$PROFILE_DIR/airootfs/etc/passwd"
+        echo "Ensuring root's shell in $PASSWD_FILE is /bin/bash"
+        sed -i 's/^root:x:0:0:root:\/root:\/.*$/root:x:0:0:root:\/root:\/bin\/bash/' "$PASSWD_FILE"
+        grep '^root:' "$PASSWD_FILE" # For logging, to confirm the change
+
+        # 4. Add htop and iotop to the list of packages to be installed in the ISO
+        PACKAGES_FILE="$PROFILE_DIR/packages.x86_64"
+        if [ -f "$PACKAGES_FILE" ]; then
+            echo "Adding htop and iotop to $PACKAGES_FILE"
+            echo "htop" >> "$PACKAGES_FILE"
+            echo "iotop" >> "$PACKAGES_FILE"
+            # Optional: Verify they were added
+            grep -E '^(htop|iotop)$' "$PACKAGES_FILE" || echo "htop or iotop not found in $PACKAGES_FILE after append. Check file format."
+        else
+            echo "Warning: $PACKAGES_FILE not found. Cannot add htop or iotop."
+        fi
+
+        # 5. Configure local pacman repository for custom packages within the ISO
+        # This will be created in the next step and pacman.conf will be updated
+        PACMAN_CONF="$PROFILE_DIR/airootfs/etc/pacman.conf"
+        LOCAL_REPO_PATH="/customrepo" # Path inside the ISO's root filesystem
+        REPO_NAME="custom_iso_repo"
+
+        # Append the custom repository definition to pacman.conf
+        echo -e "\n[${REPO_NAME}]\nSigLevel = Optional TrustAll\nServer = file://${LOCAL_REPO_PATH}" >> "$PACMAN_CONF"
+        echo "Added custom repository '$REPO_NAME' to $PACMAN_CONF pointing to $LOCAL_REPO_PATH."
+
+        echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Build and Add Wezterm-git Package to ISO
+      id: build_wezterm_pkg
+      shell: bash
+      run: |
+        PROFILE_DIR="${{ steps.prepare_profile.outputs.PROFILE_DIR }}"
+        CUSTOM_REPO_DIR="$PROFILE_DIR/airootfs/customrepo" # Actual path inside the build environment
+
+        echo "Creating custom repository directory: $CUSTOM_REPO_DIR"
+        mkdir -p "$CUSTOM_REPO_DIR"
+
+        echo "Cloning wezterm-git AUR package"
+        git clone https://aur.archlinux.org/wezterm-git.git /tmp/wezterm-git
+
+        cd /tmp/wezterm-git
+
+        echo "Building wezterm-git package..."
+        # makepkg -s: syncs dependencies and builds
+        # --noconfirm: assumes yes to all questions
+        # --skippgpcheck: wezterm-git might have PGP key issues, skip for simplicity in CI
+        # --cleanbuild: clean previous build artifacts
+        # --needed: only install needed dependencies
+        makepkg -s --noconfirm --skippgpcheck --cleanbuild --needed
+
+        if [ $? -ne 0 ]; then
+          echo "Error: Failed to build wezterm-git package."
+          exit 1
+        fi
+
+        echo "Moving built package to custom repository"
+        find . -name "wezterm-git-*.pkg.tar.zst" -exec mv {} "$CUSTOM_REPO_DIR/" \;
+
+        if [ ! -f "$CUSTOM_REPO_DIR/wezterm-git"*.pkg.tar.zst ]; then
+          echo "Error: wezterm-git package not found in $CUSTOM_REPO_DIR after build."
+          ls -l "$CUSTOM_REPO_DIR"
+          ls -l /tmp/wezterm-git # List contents of build directory for debugging
+          exit 1
+        fi
+
+        echo "Updating custom pacman repository database"
+        # -l: database will be regenerated from the contents of the current directory
+        # -r: specifies the root directory of the repository
+        # -d: specifies the database file name
+        repo-add "$CUSTOM_REPO_DIR/custom_iso_repo.db.tar.gz" "$CUSTOM_REPO_DIR/"*.pkg.tar.zst
+
+        echo "Adding wezterm-git to packages.x86_64 for inclusion in ISO"
+        PACKAGES_FILE="$PROFILE_DIR/packages.x86_64"
+        echo "wezterm-git" >> "$PACKAGES_FILE"
+        grep -E '^(wezterm-git)$' "$PACKAGES_FILE" || echo "wezterm-git not found in $PACKAGES_FILE after append. Check file format."
+
+
+    - name: Define Build Metadata and Output Directory
+      id: build_metadata
+      shell: bash
+      run: |
+        if [ -n "${{ github.event.inputs.build_date }}" ]; then
+          BUILD_TIMESTAMP="${{ github.event.inputs.build_date }}"
+        else
+          BUILD_TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
+        fi
+
+        ISO_VERSION_IDENTIFIER="${GITHUB_REF_NAME:-$(echo $GITHUB_SHA | cut -c1-7)}"
+        ISO_OUTPUT_DIR="out"
+
+        echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> "$GITHUB_OUTPUT"
+        echo "ISO_VERSION_IDENTIFIER=$ISO_VERSION_IDENTIFIER" >> "$GITHUB_OUTPUT"
+        echo "ISO_OUTPUT_DIR=$ISO_OUTPUT_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Build Arch Linux ISO
+      id: build_iso_step
+      shell: bash
+      run: |
+        mkarchiso -v -o ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} ${{ steps.prepare_profile.outputs.PROFILE_DIR }}/
+
+        ACTUAL_ISO_FILE=$(find ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} -name "*.iso" -print -quit)
+        if [ -z "$ACTUAL_ISO_FILE" ]; then
+          echo "Error: No ISO file found in ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}"
+          exit 1
+        fi
+        echo "Found ISO: $ACTUAL_ISO_FILE"
+        echo "ACTUAL_ISO_FILE=$ACTUAL_ISO_FILE" >> "$GITHUB_OUTPUT"
+
+    - name: Extract Kernel Version from ISO
+      id: extract_kernel_version
+      shell: bash
+      run: |
+        ISO_FILE="${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}"
+        MOUNT_POINT="/mnt/iso"
+        mkdir -p "$MOUNT_POINT"
+
+        echo "Mounting ISO: $ISO_FILE to $MOUNT_POINT"
+        mount -o loop "$ISO_FILE" "$MOUNT_POINT"
+
+        KERNEL_PATH=$(find "$MOUNT_POINT" -name "vmlinuz*" | head -n 1)
+        KERNEL_VERSION="Unknown"
+
+        if [ -n "$KERNEL_PATH" ]; then
+          echo "Found kernel image at: $KERNEL_PATH"
+          KERNEL_INFO=$(file "$KERNEL_PATH")
+          EXTRACTED_VERSION=$(echo "$KERNEL_INFO" | grep -oP 'version \K[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -n 1)
+          if [ -n "$EXTRACTED_VERSION" ]; then
+            KERNEL_VERSION="$EXTRACTED_VERSION"
+          else
+            echo "Could not extract specific version from: $KERNEL_INFO"
+          fi
+        else
+          echo "Could not find vmlinuz file in the ISO."
+        fi
+
+        echo "Extracted Kernel Version: $KERNEL_VERSION"
+        echo "KERNEL_VERSION_ISO=$KERNEL_VERSION" >> "$GITHUB_OUTPUT"
+
+        echo "Unmounting ISO"
+        umount "$MOUNT_POINT" || true
+        rmdir "$MOUNT_POINT" || true
+
+    - name: List generated ISOs (for debugging)
+      shell: bash
+      run: ls -lh ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}
+
+    - name: Upload ISO as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: archlinux-custom-iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
+        path: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
+        retention-days: 7
+
+    - name: Create GitHub Release (Optional)
+      if: github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
+        tag_name: "iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
+        name: "Arch Linux Custom ISO ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
+        body: |
+          Custom Arch Linux ISO built on ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
+          using the ${{ github.event.inputs.profile_name }} archiso profile.
+          Includes the 'arch.sh' script in /root/arch.sh.
+          Root user's default shell set to /bin/bash.
+          Now includes 'htop', 'iotop', and 'wezterm-git' packages (installable via custom repo).
+          Based on Arch Linux packages available at build time.
+          Kernel version (from ISO): ${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
