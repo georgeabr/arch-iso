@@ -107,37 +107,51 @@ jobs:
         echo "Creating unprivileged user: $BUILD_USER"
         useradd -m -s /bin/bash $BUILD_USER
 
-        echo "Creating custom repository directory: $CUSTOM_REPO_DIR"
+        echo "Creating custom repository directory for final ISO: $CUSTOM_REPO_DIR"
         mkdir -p "$CUSTOM_REPO_DIR"
-        chown $BUILD_USER:$BUILD_USER "$CUSTOM_REPO_DIR" # Ensure builder can write here
+        chown $BUILD_USER:$BUILD_USER "$CUSTOM_REPO_DIR" # Ensure builder can write here (for repo-add)
+
+        # Create pacman cache directory inside airootfs for direct package placement
+        PACMAN_CACHE_DIR="$PROFILE_DIR/airootfs/var/cache/pacman/pkg"
+        echo "Creating pacman cache directory for direct package placement: $PACMAN_CACHE_DIR"
+        mkdir -p "$PACMAN_CACHE_DIR"
 
         echo "Cloning wezterm-git AUR package as $BUILD_USER"
-        # Clone into the builder's home directory
         sudo -u $BUILD_USER git clone https://aur.archlinux.org/wezterm-git.git "$BUILD_HOME/wezterm-git"
 
         echo "Building wezterm-git package as $BUILD_USER using parallel build..."
-        # Switch to the builder user to run makepkg
-        # Set MAKEFLAGS to enable parallel compilation using all available CPU cores.
-        # This is the correct way to pass parallel build options to makepkg's underlying build tools.
-        sudo -u $BUILD_USER bash -c "export MAKEFLAGS=\"-j$(nproc)\" && cd \"$BUILD_HOME/wezterm-git\" && makepkg -s --noconfirm --skippgpcheck --cleanbuild --needed"
+        # Echo nproc and MAKEFLAGS before compilation
+        sudo -u $BUILD_USER bash -c "echo \"nproc output: $(nproc)\""
+        sudo -u $BUILD_USER bash -c "export MAKEFLAGS=\"-j$(nproc)\" && echo \"MAKEFLAGS value: \$MAKEFLAGS\" && cd \"$BUILD_HOME/wezterm-git\" && makepkg -s --noconfirm --skippgpcheck --cleanbuild --needed"
 
         if [ $? -ne 0 ]; then
           echo "Error: Failed to build wezterm-git package."
           exit 1
         fi
 
-        echo "Moving built package to custom repository (as root)"
+        echo "Moving built package to custom repository (for final ISO)"
         # Use find with -exec mv to move the package regardless of its full name
-        find "$BUILD_HOME/wezterm-git" -name "wezterm-git-*.pkg.tar.zst" -exec mv {} "$CUSTOM_REPO_DIR/" \;
+        BUILT_PKG=$(find "$BUILD_HOME/wezterm-git" -name "wezterm-git-*.pkg.tar.zst" -print -quit)
+        if [ -z "$BUILT_PKG" ]; then
+          echo "Error: wezterm-git package not found in build directory."
+          ls -l "$BUILD_HOME/wezterm-git"
+          exit 1
+        fi
+        mv "$BUILT_PKG" "$CUSTOM_REPO_DIR/"
+
+        # Copy the built package directly into the airootfs pacman cache for mkarchiso's build process
+        echo "Copying built package to airootfs pacman cache: $PACMAN_CACHE_DIR"
+        cp "$CUSTOM_REPO_DIR/$(basename "$BUILT_PKG")" "$PACMAN_CACHE_DIR/"
+
 
         if [ ! -f "$CUSTOM_REPO_DIR/wezterm-git"*.pkg.tar.zst ]; then
-          echo "Error: wezterm-git package not found in $CUSTOM_REPO_DIR after build."
+          echo "Error: wezterm-git package not found in $CUSTOM_REPO_DIR after build and move."
           ls -l "$CUSTOM_REPO_DIR"
           ls -l "$BUILD_HOME/wezterm-git" # List contents of build directory for debugging
           exit 1
         fi
 
-        echo "Updating custom pacman repository database (as root)"
+        echo "Updating custom pacman repository database (as root) for final ISO"
         repo-add "$CUSTOM_REPO_DIR/custom_iso_repo.db.tar.gz" "$CUSTOM_REPO_DIR/"*.pkg.tar.zst
 
         echo "Adding wezterm-git to packages.x86_64 for inclusion in ISO"
