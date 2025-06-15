@@ -117,8 +117,9 @@ jobs:
 
         echo "Building wezterm-git package as $BUILD_USER using parallel build..."
         # Switch to the builder user to run makepkg
-        # Using nproc to determine the number of cores for parallel compilation
-        sudo -u $BUILD_USER bash -c "cd \"$BUILD_HOME/wezterm-git\" && makepkg -s --noconfirm --skippgpcheck --cleanbuild --needed -j$(nproc)"
+        # Set MAKEFLAGS to enable parallel compilation using all available CPU cores.
+        # This is the correct way to pass parallel build options to makepkg's underlying build tools.
+        sudo -u $BUILD_USER bash -c "export MAKEFLAGS=\"-j$(nproc)\" && cd \"$BUILD_HOME/wezterm-git\" && makepkg -s --noconfirm --skippgpcheck --cleanbuild --needed"
 
         if [ $? -ne 0 ]; then
           echo "Error: Failed to build wezterm-git package."
