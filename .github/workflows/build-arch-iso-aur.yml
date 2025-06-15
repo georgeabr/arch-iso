@@ -33,8 +33,8 @@ jobs:
       shell: bash
       run: |
         # Install archiso, git, squashfs-tools, xorriso, dosfstools, curl, util-linux
-        # Also install base-devel for building AUR packages
-        pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux base-devel
+        # Also install base-devel, rust (for cargo), cmake, and python for building AUR packages
+        pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux base-devel rust cmake python
 
     - name: Prepare Archiso Build Profile, Add Custom Script, Set Root Shell, and Add Extra Packages
       id: prepare_profile
