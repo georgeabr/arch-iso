@@ -91,7 +91,10 @@ jobs:
         # --- Modifications for KDE Wayland and X11 sessions, and specific applications ---
         echo "plasma-workspace" >> "$PROFILE_DIR/packages.x86_64" # Core KDE Plasma, now includes Wayland session
         echo "plasma-x11-session" >> "$PROFILE_DIR/packages.x86_64" # KDE X11 session
-        echo "sddm" >> "$PROFILE_DIR/packages.x86_64" # Display Manager for KDE
+
+        # Remove SDDM, Add GDM
+        sed -i '/sddm/d' "$PROFILE_DIR/packages.x86_64" || true # Remove sddm if present
+        echo "gdm" >> "$PROFILE_DIR/packages.x86_64" # Add GDM
 
         # Add specific KDE applications
         echo "dolphin" >> "$PROFILE_DIR/packages.x86_64"
@@ -106,15 +109,31 @@ jobs:
 
         # Add sudo package
         echo "sudo" >> "$PROFILE_DIR/packages.x86_64"
+        # Ensure qt6-base is explicitly added to packages, as plasma-workspace might not pull it in for version query specifically
+        echo "qt6-base" >> "$PROFILE_DIR/packages.x86_64"
 
-        # Enable SDDM service to start on boot
+
+        # --- Configure Display Manager Service (GDM) ---
         mkdir -p "$PROFILE_DIR/airootfs/etc/systemd/system/"
-        ln -s /usr/lib/systemd/system/sddm.service "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
+        # Remove old display-manager symlink if it exists (e.g., from sddm)
+        rm -f "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
+        # Enable GDM service to start on boot
+        ln -s /usr/lib/systemd/system/gdm.service "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
+        echo "Enabled GDM as the display manager."
 
-        # --- Enable SDDM autologin for 'george' user with X11 session ---
-        mkdir -p "$PROFILE_DIR/airootfs/etc/sddm.conf.d"
-        echo "Enabling SDDM autologin for 'george' user with plasma-x11.desktop session."
-        echo -e "[Autologin]\nUser=george\nSession=plasma-x11.desktop" > "$PROFILE_DIR/airootfs/etc/sddm.conf.d/autologin.conf"
+        # --- Configure GDM autologin for 'george' user ---
+        # Remove old SDDM autologin config if it exists
+        rm -f "$PROFILE_DIR/airootfs/etc/sddm.conf.d/autologin.conf" || true
+        mkdir -p "$PROFILE_DIR/airootfs/etc/gdm/"
+        echo "Configuring GDM autologin for 'george' user."
+        # Create or modify /etc/gdm/custom.conf
+        cat <<EOF_GDM_CONF > "$PROFILE_DIR/airootfs/etc/gdm/custom.conf"
+# GDM configuration file
+[daemon]
+AutomaticLoginEnable=True
+AutomaticLogin=george
+EOF_GDM_CONF
+        echo "GDM autologin configured."
 
 
         # --- Add _airootfs_root_install function to profiledef.sh to perform a full update and create user inside airootfs ---
@@ -127,37 +146,39 @@ jobs:
         # Build the function content in a shell variable to avoid YAML multi-line string issues
         FUNCTION_CONTENT=""
         FUNCTION_CONTENT+="_airootfs_root_install() {\n"
-        FUNCTION_CONTENT+="    set -euxo pipefail # Exit immediately if a command exits with a non-zero status\n"
+        FUNCTION_CONTENT+="    set -euxo pipefail\n"
+        FUNCTION_CONTENT+="    echo \"--- Starting _airootfs_root_install function ---\"\n" # Added for verbosity
         FUNCTION_CONTENT+="    echo \"Running full system upgrade inside the airootfs...\"\n"
         FUNCTION_CONTENT+="    pacman-key --init\n"
         FUNCTION_CONTENT+="    pacman-key --populate archlinux\n"
         FUNCTION_CONTENT+="    pacman -Syyu --noconfirm\n"
         FUNCTION_CONTENT+="\n"
-        FUNCTION_CONTENT+="    echo \"Creating user 'george' with password 'parola' and adding to wheel group...\"\n"
-        FUNCTION_CONTENT+="    # Check if 'george' user already exists to prevent errors on re-run\n"
+        FUNCTION_CONTENT+="    echo \"Attempting to create user 'george' with password 'parola' and add to wheel group...\"\n" # Added for verbosity
         FUNCTION_CONTENT+="    if ! id -u george &>/dev/null; then\n"
+        FUNCTION_CONTENT+="        echo \"'george' user does not exist. Creating now.\"\n" # Added for verbosity
         FUNCTION_CONTENT+="        useradd -m -g users -G wheel,storage,power -s /bin/bash george\n"
+        FUNCTION_CONTENT+="        echo \"Setting password for 'george' user.\"\n" # Added for verbosity
         FUNCTION_CONTENT+="        echo 'george:parola' | chpasswd\n"
-        FUNCTION_CONTENT+="        echo \"User 'george' created successfully.\"\n"
+        FUNCTION_CONTENT+="        echo \"User 'george' created and password set successfully.\"\n" # Added for verbosity
         FUNCTION_CONTENT+="    else\n"
-        FUNCTION_CONTENT+="        echo \"User 'george' already exists. Skipping user creation.\"\n"
+        FUNCTION_CONTENT+="        echo \"User 'george' already exists. Skipping user creation.\"\n" # Added for verbosity
         FUNCTION_CONTENT+="    fi\n"
-        FUNCTION_CONTENT+="    # Verify user creation and group membership\n"
+        FUNCTION_CONTENT+="    echo \"Verifying 'george' user creation and group membership...\"\n" # Added for verbosity
         FUNCTION_CONTENT+="    id george\n"
         FUNCTION_CONTENT+="    groups george\n"
         FUNCTION_CONTENT+="\n"
-        FUNCTION_CONTENT+="    echo \"Configuring sudoers for wheel group...\"\n"
-        FUNCTION_CONTENT+="    # Ensure sudo is installed, although it should be via packages.x86_64\n"
-        FUNCTION_CONTENT+="    pacman -S --noconfirm sudo || true # Install sudo if not present\n"
-        FUNCTION_CONTENT+="    # Uncomment %wheel ALL=(ALL:ALL) ALL in /etc/sudoers if not already uncommented\n"
+        FUNCTION_CONTENT+="    echo \"Configuring sudoers for wheel group...\"\n" # Added for verbosity
+        FUNCTION_CONTENT+="    pacman -S --noconfirm sudo || true\n"
         FUNCTION_CONTENT+="    if grep -q '^# %wheel ALL=(ALL:ALL) ALL' /etc/sudoers; then\n"
+        FUNCTION_CONTENT+="        echo \"Uncommenting wheel group in sudoers.\"\n" # Added for verbosity
         FUNCTION_CONTENT+="        sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers\n"
-        FUNCTION_CONTENT+="        echo \"Sudoers file updated for wheel group.\"\n"
+        FUNCTION_CONTENT+="        echo \"Sudoers file updated for wheel group.\"\n" # Added for verbosity
         FUNCTION_CONTENT+="    else\n"
-        FUNCTION_CONTENT+="        echo \"Sudoers file already configured for wheel group or line not found as expected. Skipping sudoers modification.\"\n"
+        FUNCTION_CONTENT+="        echo \"Sudoers file already configured for wheel group or line not found as expected. Skipping sudoers modification.\"\n" # Added for verbosity
         FUNCTION_CONTENT+="    fi\n"
-        FUNCTION_CONTENT+="    # Verify sudoers entry\n"
+        FUNCTION_CONTENT+="    echo \"Verifying sudoers entry for wheel group...\"\n" # Added for verbosity
         FUNCTION_CONTENT+="    grep '%wheel' /etc/sudoers\n"
+        FUNCTION_CONTENT+="    echo \"--- Finished _airootfs_root_install function ---\"\n" # Added for verbosity
         FUNCTION_CONTENT+="}\n"
         # Append the content to profiledef.sh using echo -e
         echo -e "$FUNCTION_CONTENT" >> "$PROFILEDEF_PATH"
@@ -235,7 +256,7 @@ jobs:
       shell: bash
       run: |
         ISO_FILE="${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}"
-        MOUNT_POINT="/mnt/iso_desktop" # Use a different mount point
+        MOUNT_POINT="/mnt/iso_desktop"
         AIROOTFS_PATH="$MOUNT_POINT/airootfs"
         
         mkdir -p "$MOUNT_POINT"
@@ -245,24 +266,30 @@ jobs:
         KDE_VERSION="N/A"
         QT_VERSION="N/A"
 
-        # Check for plasma-workspace version within the airootfs
-        # Use pacman -Q --root to query packages in the mounted filesystem
-        PLASMA_PKG_INFO=$(pacman -Q --root "$AIROOTFS_PATH" plasma-workspace 2>/dev/null || true)
+        echo "--- Debugging pacman -Q --root issue ---"
+        echo "Listing contents of $AIROOTFS_PATH/var/lib/pacman/local/ (looking for plasma-workspace-* and qt6-base-*):"
+        ls -l "$AIROOTFS_PATH/var/lib/pacman/local/" | grep -E 'plasma-workspace|qt6-base' || echo "No plasma-workspace or qt6-base directories found."
+
+        echo "Attempting to query plasma-workspace:"
+        PLASMA_PKG_INFO=$(pacman -Q --root "$AIROOTFS_PATH" plasma-workspace 2>&1 || true)
+        echo "Output for plasma-workspace query: $PLASMA_PKG_INFO"
         if echo "$PLASMA_PKG_INFO" | grep -q "plasma-workspace"; then
             KDE_VERSION=$(echo "$PLASMA_PKG_INFO" | awk '{print $2}' | cut -d'-' -f1)
             echo "Found KDE Plasma (plasma-workspace) version: $KDE_VERSION"
         else
-            echo "plasma-workspace package not found in airootfs."
+            echo "plasma-workspace package not found or query failed as expected."
         fi
 
-        # Check for qt6-base version within the airootfs
-        QT_PKG_INFO=$(pacman -Q --root "$AIROOTFS_PATH" qt6-base 2>/dev/null || true)
+        echo "Attempting to query qt6-base:"
+        QT_PKG_INFO=$(pacman -Q --root "$AIROOTFS_PATH" qt6-base 2>&1 || true)
+        echo "Output for qt6-base query: $QT_PKG_INFO"
         if echo "$QT_PKG_INFO" | grep -q "qt6-base"; then
             QT_VERSION=$(echo "$QT_PKG_INFO" | awk '{print $2}' | cut -d'-' -f1)
             echo "Found Qt6 (qt6-base) version: $QT_VERSION"
         else
-            echo "qt6-base package not found in airootfs."
+            echo "qt6-base package not found or query failed as expected."
         fi
+        echo "--- End Debugging ---"
 
         echo "KDE_VERSION_ISO=$KDE_VERSION" >> "$GITHUB_OUTPUT"
         echo "QT_VERSION_ISO=$QT_VERSION" >> "$GITHUB_OUTPUT"
@@ -294,8 +321,9 @@ jobs:
           using the ${{ github.event.inputs.profile_name }} archiso profile.
           Includes the 'arch.sh' script in /root/arch.sh.
           Root user's default shell set to /bin/bash.
-          Now includes 'htop', 'iotop', KDE Plasma (Wayland and X11 sessions), Dolphin, Konsole, KDE Partition Manager, and LXDE.
+          Now includes 'htop', 'iotop', KDE Plasma (Wayland and X11 sessions), and LXDE.
           Autologin enabled for 'george' user into KDE X11 session (password: parola).
+          Using GDM as the display manager.
           Based on Arch Linux packages available at build time.
           Kernel version (from ISO): ${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}
           KDE Plasma version (from ISO): ${{ steps.extract_desktop_versions.outputs.KDE_VERSION_ISO }}
