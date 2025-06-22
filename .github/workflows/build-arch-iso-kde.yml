@@ -32,10 +32,9 @@ jobs:
     - name: Install archiso and build dependencies within the container
       shell: bash
       run: |
-        # Ensure system is fully up-to-date and package databases are synced
+        # Ensure system is fully up-to-date and package databases are synced (forced refresh)
+        # Install necessary build tools, including the 'linux' package for version detection on the host
         pacman -Syyu --noconfirm || true # Use || true to allow continuation if no updates are available, or for minor errors
-
-        # Install necessary build tools, including the 'linux' package for version detection
         pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux linux
 
     - name: Prepare Archiso Build Profile, Add Custom Script, Set Root Shell, and Add Extra Packages
@@ -48,26 +47,46 @@ jobs:
         SCRIPT_FILENAME="arch.sh"
         SCRIPT_DEST_PATH="$PROFILE_DIR/airootfs/root/$SCRIPT_FILENAME"
 
-        # Copy the default archiso profile to a custom build directory
-        cp -r /usr/share/archiso/configs/$INPUT_PROFILE_NAME "$PROFILE_DIR"
+        # 1. Copy the chosen archiso profile
+        if [ -d "./$INPUT_PROFILE_NAME" ]; then
+          echo "Using custom profile from repository: ./$INPUT_PROFILE_NAME"
+          cp -r "./$INPUT_PROFILE_NAME" "$PROFILE_DIR"
+        elif [ -d "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" ]; then
+          echo "Using official archiso profile: /usr/share/archiso/configs/$INPUT_PROFILE_NAME"
+          cp -r "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" "$PROFILE_DIR"
+        else
+          echo "Error: Profile '$INPUT_PROFILE_NAME' not found in repository or official configs."
+          exit 1
+        fi
 
-        # Add custom arch.sh script
-        mkdir -p "$PROFILE_DIR/airootfs/root"
-        curl -o "$SCRIPT_DEST_PATH" "$SCRIPT_URL"
+        # 2. Add the custom script (arch.sh)
+        mkdir -p "$(dirname "$SCRIPT_DEST_PATH")"
+        echo "Downloading $SCRIPT_URL to $SCRIPT_DEST_PATH"
+        curl -sSL "$SCRIPT_URL" -o "$SCRIPT_DEST_PATH"
+        echo "Setting executable permissions for $SCRIPT_DEST_PATH"
         chmod +x "$SCRIPT_DEST_PATH"
 
-        # Set root user's default shell to /bin/bash
-        sed -i 's/^root:x:0:0:root:\/root:\/bin\/bash/root:x:0:0:root:\/root:\/bin\/bash/' "$PROFILE_DIR/airootfs/etc/passwd" || \
-        echo "Root entry not found or already set to bash. Skipping sed command for root shell."
+        # 3. Ensure root's default shell in the ISO is /bin/bash
+        PASSWD_FILE="$PROFILE_DIR/airootfs/etc/passwd"
+        echo "Ensuring root's shell in $PASSWD_FILE is /bin/bash"
+        sed -i 's/^root:x:0:0:root:\/root:\/.*$/root:x:0:0:root:\/root:\/bin\/bash/' "$PASSWD_FILE"
+        grep '^root:' "$PASSWD_FILE" # For logging, to confirm the change
 
         # --- Update mirrorlist for airootfs to ensure latest packages are pulled ---
         echo "Fetching and preparing latest mirrorlist for airootfs..."
         mkdir -p "$PROFILE_DIR/airootfs/etc/pacman.d/"
         curl -s "https://archlinux.org/mirrorlist/all/" | sed -e 's/^#Server/Server/' > "$PROFILE_DIR/airootfs/etc/pacman.d/mirrorlist"
 
-        # Add htop and iotop packages to the profile's package list
-        echo "htop" >> "$PROFILE_DIR/packages.x86_64"
-        echo "iotop" >> "$PROFILE_DIR/packages.x86_64"
+        # 4. Add htop and iotop to the list of packages to be installed in the ISO
+        PACKAGES_FILE="$PROFILE_DIR/packages.x86_64"
+        if [ -f "$PACKAGES_FILE" ]; then
+            echo "Adding htop and iotop to $PACKAGES_FILE"
+            echo "htop" >> "$PACKAGES_FILE"
+            echo "iotop" >> "$PACKAGES_FILE"
+            grep -E '^(htop|iotop)$' "$PACKAGES_FILE" || echo "htop or iotop not found in $PACKAGES_FILE after append. Check file format."
+        else
+            echo "Warning: $PACKAGES_FILE not found. Cannot add htop or iotop."
+        fi
 
         # --- Modifications for KDE Wayland and X11 sessions, and specific applications ---
         echo "plasma-workspace" >> "$PROFILE_DIR/packages.x86_64" # Core KDE Plasma, now includes Wayland session
@@ -92,54 +111,104 @@ jobs:
         EOF
         # Note: 'plasma.desktop' is typically used by SDDM to launch the Plasma (Wayland) session if available.
 
-        # Output the actual ISO output directory for later steps
-        echo "ISO_OUTPUT_DIR=out" >> "$GITHUB_OUTPUT"
-        echo "BUILD_TIMESTAMP=$(date +%Y%m%d_%H%M%S)" >> "$GITHUB_OUTPUT"
+        # --- Add _airootfs_root_install function to profiledef.sh to perform a full update inside airootfs ---
+        PROFILEDEF_PATH="$PROFILE_DIR/profiledef.sh"
+        if ! grep -q "_airootfs_root_install" "$PROFILEDEF_PATH"; then
+            echo "Adding _airootfs_root_install function to $PROFILEDEF_PATH"
+            cat << 'EOF_PROFILEDEF' >> "$PROFILEDEF_PATH"
+
+_airootfs_root_install() {
+    echo "Running full system upgrade inside the airootfs..."
+    # Initialize pacman keyring and populate with Arch Linux keys
+    # These might already be done by mkarchiso, but good to ensure
+    pacman-key --init
+    pacman-key --populate archlinux
+
+    # Perform a full system upgrade inside the airootfs
+    pacman -Syyu --noconfirm
+}
+EOF_PROFILEDEF
+        else
+            echo "_airootfs_root_install function already exists in $PROFILEDEF_PATH. Skipping addition."
+        fi
+
         echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
 
-    - name: Build Arch ISO
+    - name: Define Build Metadata and Output Directory
+      id: build_metadata
+      shell: bash
+      run: |
+        if [ -n "${{ github.event.inputs.build_date }}" ]; then
+          BUILD_TIMESTAMP="${{ github.event.inputs.build_date }}"
+        else
+          BUILD_TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
+        fi
+
+        ISO_VERSION_IDENTIFIER="${GITHUB_REF_NAME:-$(echo $GITHUB_SHA | cut -c1-7)}"
+        ISO_OUTPUT_DIR="out"
+
+        echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> "$GITHUB_OUTPUT"
+        echo "ISO_VERSION_IDENTIFIER=$ISO_VERSION_IDENTIFIER" >> "$GITHUB_OUTPUT"
+        echo "ISO_OUTPUT_DIR=$ISO_OUTPUT_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Build Arch Linux ISO
       id: build_iso_step
       shell: bash
       run: |
-        # This pacman -Syyu is crucial to ensure the host build environment has the very latest packages
-        # and synchronized databases, from which mkarchiso will then pull its packages.
-        echo "Running full system upgrade to ensure latest packages are available for ISO build (forced sync)..."
-        pacman -Syyu --noconfirm || true # Use || true to allow continuation even if no updates or minor errors occur
-
-        # Get the kernel version that will be installed on the ISO
-        KERNEL_VERSION=$(pacman -Qi linux | grep Version | awk '{print $3}' | cut -d'-' -f1)
-        echo "Detected kernel version for ISO: $KERNEL_VERSION"
-        echo "KERNEL_VERSION=$KERNEL_VERSION" >> "$GITHUB_OUTPUT"
-
-        mkarchiso -v ${{ steps.prepare_profile.outputs.PROFILE_DIR }}
-        ACTUAL_ISO_FILE=$(ls -1 out/*.iso | head -n 1) # Get the actual ISO filename
+        mkarchiso -v -o ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} ${{ steps.prepare_profile.outputs.PROFILE_DIR }}/
+        
+        ACTUAL_ISO_FILE=$(find ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} -name "*.iso" -print -quit)
+        if [ -z "$ACTUAL_ISO_FILE" ]; then
+          echo "Error: No ISO file found in ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}"
+          exit 1
+        fi
+        echo "Found ISO: $ACTUAL_ISO_FILE"
         echo "ACTUAL_ISO_FILE=$ACTUAL_ISO_FILE" >> "$GITHUB_OUTPUT"
 
-    - name: Clean up build directory (optional)
-      if: always()
+    - name: Extract Kernel Version from ISO
+      id: extract_kernel_version
       shell: bash
       run: |
-        MOUNT_POINT="/mnt/archiso_workdir"
-        # Attempt to unmount any mounted directories from the build process
-        umount -R "$MOUNT_POINT" || true # Use || true to prevent job failure if unmount fails (e.g., already unmounted)
+        ISO_FILE="${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}"
+        MOUNT_POINT="/mnt/iso"
+        mkdir -p "$MOUNT_POINT"
+
+        echo "Mounting ISO: $ISO_FILE to $MOUNT_POINT"
+        mount -o loop "$ISO_FILE" "$MOUNT_POINT"
+
+        KERNEL_PATH=$(find "$MOUNT_POINT" -name "vmlinuz*" | head -n 1)
+        KERNEL_VERSION="Unknown"
+
+        if [ -n "$KERNEL_PATH" ]; then
+          echo "Found kernel image at: $KERNEL_PATH"
+          KERNEL_INFO=$(file "$KERNEL_PATH")
+          # Extract the version string from the file command output (e.g., "version 6.8.9-arch1-2")
+          # This regex specifically looks for "version X.Y.Z-..."
+          EXTRACTED_VERSION=$(echo "$KERNEL_INFO" | grep -oP 'version \K[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -n 1)
+          if [ -n "$EXTRACTED_VERSION" ]; then
+            KERNEL_VERSION="$EXTRACTED_VERSION"
+          else
+            echo "Could not extract specific version from: $KERNEL_INFO"
+          fi
+        else
+          echo "Could not find vmlinuz file in the ISO."
+        fi
+
+        echo "Extracted Kernel Version: $KERNEL_VERSION"
+        echo "KERNEL_VERSION_ISO=$KERNEL_VERSION" >> "$GITHUB_OUTPUT"
+
+        echo "Unmounting ISO"
+        umount "$MOUNT_POINT" || true # Use || true to prevent job failure if unmount fails (e.g., already unmounted)
         rmdir "$MOUNT_POINT" || true
 
-    - name: List generated ISO (verbose output)
+    - name: List generated ISOs (for debugging)
       shell: bash
-      run: |
-        # Ensure the ISO file path is correctly passed from the previous step
-        if [ -f "${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}" ]; then
-          ls -lha "${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}"
-        else
-          echo "Warning: ISO file not found at expected path: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}"
-          echo "Listing contents of the output directory instead:"
-          ls -lha "${{ steps.prepare_profile.outputs.ISO_OUTPUT_DIR }}"
-        fi
+      run: ls -lh ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}
 
     - name: Upload ISO as Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: archlinux-custom-iso-${{ steps.prepare_profile.outputs.BUILD_TIMESTAMP }}
+        name: archlinux-custom-iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
         path: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
         retention-days: 7
 
@@ -148,13 +217,16 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         files: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
-        tag_name: "iso-${{ steps.prepare_profile.outputs.BUILD_TIMESTAMP }}"
-        name: "Arch Linux Custom ISO ${{ steps.prepare_profile.outputs.BUILD_TIMESTAMP }}"
+        tag_name: "iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
+        name: "Arch Linux Custom ISO ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
         body: |
-          Custom Arch Linux ISO built on ${{ steps.prepare_profile.outputs.BUILD_TIMESTAMP }}
+          Custom Arch Linux ISO built on ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
           using the ${{ github.event.inputs.profile_name }} archiso profile.
           Includes the 'arch.sh' script in /root/arch.sh.
           Root user's default shell set to /bin/bash.
           Now includes 'htop', 'iotop', KDE Plasma (Wayland and X11 sessions), Dolphin, Konsole, and KDE Partition Manager.
           Based on Arch Linux packages available at build time.
-          Kernel version (from ISO): ${{ steps.build_iso_step.outputs.KERNEL_VERSION }}
+          Kernel version (from ISO): ${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
