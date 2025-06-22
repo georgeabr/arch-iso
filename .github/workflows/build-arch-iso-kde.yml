@@ -127,7 +127,7 @@ jobs:
         mkdir -p "$PROFILE_DIR/airootfs/etc/gdm/"
         echo "Configuring GDM autologin for 'george' user."
         # Create or modify /etc/gdm/custom.conf
-        cat <<EOF_GDM_CONF > "$PROFILE_DIR/airootfs/etc/gdm/custom.conf"
+cat <<EOF_GDM_CONF > "$PROFILE_DIR/airootfs/etc/gdm/custom.conf"
 # GDM configuration file
 [daemon]
 AutomaticLoginEnable=True
