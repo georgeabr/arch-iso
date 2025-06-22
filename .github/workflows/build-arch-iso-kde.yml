@@ -63,7 +63,7 @@ jobs:
         mkdir -p "$(dirname "$SCRIPT_DEST_PATH")"
         echo "Downloading $SCRIPT_URL to $SCRIPT_DEST_PATH"
         curl -sSL "$SCRIPT_URL" -o "$SCRIPT_DEST_PATH"
-        echo "Setting executable permissions for $SCRIPT_DEST_PATH"
+        echo "Setting executable permissions for "$SCRIPT_DEST_PATH""
         chmod +x "$SCRIPT_DEST_PATH"
 
         # 3. Ensure root's default shell in the ISO is /bin/bash
@@ -138,10 +138,10 @@ EOF_GDM_CONF
 
         # --- Add _airootfs_root_install function to profiledef.sh to perform a full update and create user inside airootfs ---
         PROFILEDEF_PATH="$PROFILE_DIR/profiledef.sh"
-        echo "Checking for _airootfs_root_install function in $PROFILEDEF_PATH"
+        echo "Checking for _airootfs_root_install function in "$PROFILEDEF_PATH""
         # Temporarily remove existing _airootfs_root_install to ensure a clean addition
         sed -i '/^_airootfs_root_install() {/,/^}$/d' "$PROFILEDEF_PATH" || true
-        echo "Adding _airootfs_root_install function to $PROFILEDEF_PATH with user creation and verbose logging."
+        echo "Adding _airootfs_root_install function to "$PROFILEDEF_PATH" with user creation and verbose logging."
 
         # Use a heredoc to append the function content directly. The EOF_PROFILEDEF_FUNCTION MUST be at column 1.
 cat << 'EOF_PROFILEDEF_FUNCTION' >> "$PROFILEDEF_PATH"
