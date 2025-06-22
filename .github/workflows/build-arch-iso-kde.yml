@@ -61,7 +61,7 @@ jobs:
         echo "iotop" >> "$PROFILE_DIR/packages.x86_64"
 
         # --- Modifications for KDE Wayland and X11 sessions, and specific applications ---
-        echo "plasma-wayland-session" >> "$PROFILE_DIR/packages.x86_64" # Core KDE Wayland session
+        echo "plasma-workspace" >> "$PROFILE_DIR/packages.x86_64" # Core KDE Plasma, now includes Wayland session
         echo "plasma-x11-session" >> "$PROFILE_DIR/packages.x86_64" # KDE X11 session
         echo "sddm" >> "$PROFILE_DIR/packages.x86_64" # Display Manager for KDE
 
