@@ -1,0 +1,141 @@
+name: Build Arch Linux ISO with arch.sh, htop, iotop, and KDE Wayland/X11
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_date:
+        description: 'ISO Build Timestamp (YYYYMMDD_HHMMSS, leave empty for current time)'
+        required: false
+        type: string
+      profile_name:
+        description: 'Name of the archiso profile to use (e.g., "releng" or your custom profile folder)'
+        required: false
+        type: string
+        default: 'releng'
+
+permissions:
+  contents: write
+
+jobs:
+  build_iso:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux/archlinux:latest
+      options: --privileged
+
+    timeout-minutes: 120
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install archiso and build dependencies within the container
+      shell: bash
+      run: |
+        pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux
+
+    - name: Prepare Archiso Build Profile, Add Custom Script, Set Root Shell, and Add Extra Packages
+      id: prepare_profile
+      shell: bash
+      run: |
+        PROFILE_DIR="archiso_build_profile"
+        INPUT_PROFILE_NAME="${{ github.event.inputs.profile_name }}"
+        SCRIPT_URL="https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh"
+        SCRIPT_FILENAME="arch.sh"
+        SCRIPT_DEST_PATH="$PROFILE_DIR/airootfs/root/$SCRIPT_FILENAME"
+
+        # Copy the default archiso profile to a custom build directory
+        cp -r /usr/share/archiso/configs/$INPUT_PROFILE_NAME "$PROFILE_DIR"
+
+        # Add custom arch.sh script
+        mkdir -p "$PROFILE_DIR/airootfs/root"
+        curl -o "$SCRIPT_DEST_PATH" "$SCRIPT_URL"
+        chmod +x "$SCRIPT_DEST_PATH"
+
+        # Set root user's default shell to /bin/bash
+        sed -i 's/^root:x:0:0:root:\/root:\/bin\/bash/root:x:0:0:root:\/root:\/bin\/bash/' "$PROFILE_DIR/airootfs/etc/passwd" || \
+        echo "Root entry not found or already set to bash. Skipping sed command for root shell."
+
+        # Add htop and iotop packages to the profile's package list
+        echo "htop" >> "$PROFILE_DIR/packages.x86_64"
+        echo "iotop" >> "$PROFILE_DIR/packages.x86_64"
+
+        # --- Modifications for KDE Wayland and X11 sessions, and specific applications ---
+        echo "plasma-wayland-session" >> "$PROFILE_DIR/packages.x86_64" # Core KDE Wayland session
+        echo "plasma-x11-session" >> "$PROFILE_DIR/packages.x86_64" # KDE X11 session
+        echo "sddm" >> "$PROFILE_DIR/packages.x86_64" # Display Manager for KDE
+
+        # Add specific KDE applications
+        echo "dolphin" >> "$PROFILE_DIR/packages.x86_64"
+        echo "konsole" >> "$PROFILE_DIR/packages.x86_64"
+        echo "partitionmanager" >> "$PROFILE_DIR/packages.x86_64"
+
+        # Enable SDDM service to start on boot
+        mkdir -p "$PROFILE_DIR/airootfs/etc/systemd/system/"
+        ln -s /usr/lib/systemd/system/sddm.service "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
+
+        # Optional: Configure SDDM to autologin and start Plasma (Wayland) session
+        mkdir -p "$PROFILE_DIR/airootfs/etc/sddm.conf.d"
+        cat << EOF > "$PROFILE_DIR/airootfs/etc/sddm.conf.d/autologin-kde-wayland.conf"
+        [Autologin]
+        User=root # You might want to create a dedicated live user instead of using root for autologin
+        Session=plasma.desktop
+        EOF
+        # Note: 'plasma.desktop' is typically used by SDDM to launch the Plasma (Wayland) session if available.
+
+        # Output the actual ISO output directory for later steps
+        echo "ISO_OUTPUT_DIR=out" >> "$GITHUB_OUTPUT"
+        echo "BUILD_TIMESTAMP=$(date +%Y%m%d_%H%M%S)" >> "$GITHUB_OUTPUT"
+        echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Build Arch ISO
+      id: build_iso_step
+      shell: bash
+      run: |
+        mkarchiso -v ${{ steps.prepare_profile.outputs.PROFILE_DIR }}
+        ACTUAL_ISO_FILE=$(ls -1 out/*.iso | head -n 1) # Get the actual ISO filename
+        echo "ACTUAL_ISO_FILE=$ACTUAL_ISO_FILE" >> "$GITHUB_OUTPUT"
+
+    - name: Clean up build directory (optional)
+      if: always()
+      shell: bash
+      run: |
+        MOUNT_POINT="/mnt/archiso_workdir"
+        # Attempt to unmount any mounted directories from the build process
+        umount -R "$MOUNT_POINT" || true # Use || true to prevent job failure if unmount fails (e.g., already unmounted)
+        rmdir "$MOUNT_POINT" || true
+
+    - name: List generated ISO (verbose output)
+      shell: bash
+      run: |
+        # Ensure the ISO file path is correctly passed from the previous step
+        if [ -f "${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}" ]; then
+          ls -lha "${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}"
+        else
+          echo "Warning: ISO file not found at expected path: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}"
+          echo "Listing contents of the output directory instead:"
+          ls -lha "${{ steps.prepare_profile.outputs.ISO_OUTPUT_DIR }}"
+        fi
+
+    - name: Upload ISO as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: archlinux-custom-iso-${{ steps.prepare_profile.outputs.BUILD_TIMESTAMP }}
+        path: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
+        retention-days: 7
+
+    - name: Create GitHub Release (Optional)
+      if: github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
+        tag_name: "iso-${{ steps.prepare_profile.outputs.BUILD_TIMESTAMP }}"
+        name: "Arch Linux Custom ISO ${{ steps.prepare_profile.outputs.BUILD_TIMESTAMP }}"
+        body: |
+          Custom Arch Linux ISO built on ${{ steps.prepare_profile.outputs.BUILD_TIMESTAMP }}
+          using the ${{ github.event.inputs.profile_name }} archiso profile.
+          Includes the 'arch.sh' script in /root/arch.sh.
+          Root user's default shell set to /bin/bash.
+          Now includes 'htop', 'iotop', KDE Plasma (Wayland and X11 sessions), Dolphin, Konsole, and KDE Partition Manager.
+          Based on Arch Linux packages available at build time.
+          Kernel version (from ISO): ${{ steps.build_metadata.outputs.KERNEL_VERSION }} (placeholder if not extracted)
