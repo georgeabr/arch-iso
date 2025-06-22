@@ -1,4 +1,4 @@
-name: Build Custom Arch Linux ISO with arch.sh, htop, iotop, and wezterm-git
+name: Build Arch Linux ISO with arch.sh and wezterm-git
 
 on:
   workflow_dispatch:
