@@ -102,14 +102,19 @@ jobs:
         mkdir -p "$PROFILE_DIR/airootfs/etc/systemd/system/"
         ln -s /usr/lib/systemd/system/sddm.service "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
 
-        # Optional: Configure SDDM to autologin and start Plasma (Wayland) session
+        # --- Disable SDDM autologin and set X11 as default session for SDDM ---
+        # Remove the autologin config file if it exists (ensures autologin is disabled)
+        rm -f "$PROFILE_DIR/airootfs/etc/sddm.conf.d/autologin-kde-wayland.conf"
+        echo "SDDM autologin disabled."
+
+        # Set X11 as the default session for SDDM by creating a drop-in config
         mkdir -p "$PROFILE_DIR/airootfs/etc/sddm.conf.d"
-        cat << EOF > "$PROFILE_DIR/airootfs/etc/sddm.conf.d/autologin-kde-wayland.conf"
-        [Autologin]
-        User=root # You might want to create a dedicated live user instead of using root for autologin
-        Session=plasma.desktop
-        EOF
-        # Note: 'plasma.desktop' is typically used by SDDM to launch the Plasma (Wayland) session if available.
+        echo "Setting SDDM default session to plasma-x11.desktop."
+        cat << 'EOF_SDDM_DEFAULT' > "$PROFILE_DIR/airootfs/etc/sddm.conf.d/default-session.conf"
+[General]
+Session=plasma-x11.desktop
+EOF_SDDM_DEFAULT
+
 
         # --- Add _airootfs_root_install function to profiledef.sh to perform a full update inside airootfs ---
         PROFILEDEF_PATH="$PROFILE_DIR/profiledef.sh"
