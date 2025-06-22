@@ -118,18 +118,17 @@ jobs:
         PROFILEDEF_PATH="$PROFILE_DIR/profiledef.sh"
         echo "Checking for _airootfs_root_install function in $PROFILEDEF_PATH"
         if ! grep -q "_airootfs_root_install()" "$PROFILEDEF_PATH"; then
-            echo "Adding _airootfs_root_install function to $PROFILEDEF_PATH using here-doc for robust YAML parsing"
-            # The content between 'EOF_PROFILEDEF' markers below must be indented
-            # at the same level as the 'cat <<' command itself (typically 10 spaces).
-            # The closing 'EOF_PROFILEDEF' marker MUST also be at this same indentation level.
-            cat << 'EOF_PROFILEDEF' >> "$PROFILEDEF_PATH"
-_airootfs_root_install() {
-    echo "Running full system upgrade inside the airootfs..."
-    pacman-key --init
-    pacman-key --populate archlinux
-    pacman -Syyu --noconfirm
-}
-EOF_PROFILEDEF
+            echo "Adding _airootfs_root_install function to $PROFILEDEF_PATH by building string in shell"
+            # Build the function content in a shell variable to avoid YAML multi-line string issues
+            FUNCTION_CONTENT=""
+            FUNCTION_CONTENT+="_airootfs_root_install() {\n"
+            FUNCTION_CONTENT+="    echo \"Running full system upgrade inside the airootfs...\"\n"
+            FUNCTION_CONTENT+="    pacman-key --init\n"
+            FUNCTION_CONTENT+="    pacman-key --populate archlinux\n"
+            FUNCTION_CONTENT+="    pacman -Syyu --noconfirm\n"
+            FUNCTION_CONTENT+="}\n"
+            # Append the content to profiledef.sh using echo -e
+            echo -e "$FUNCTION_CONTENT" >> "$PROFILEDEF_PATH"
         else
             echo "_airootfs_root_install function already exists in $PROFILEDEF_PATH. Manual intervention might be needed if it's not performing the desired update."
         fi
@@ -143,7 +142,7 @@ EOF_PROFILEDEF
         if [ -n "${{ github.event.inputs.build_date }}" ]; then
           BUILD_TIMESTAMP="${{ github.event.inputs.build_date }}"
         else
-          BUILD_TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
+          BUILD_TIMESTAMP=$(date '+%Y%m%d_%H%MMSS')
         fi
 
         ISO_VERSION_IDENTIFIER="${GITHUB_REF_NAME:-$(echo $GITHUB_SHA | cut -c1-7)}"
