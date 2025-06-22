@@ -98,6 +98,12 @@ jobs:
         echo "konsole" >> "$PROFILE_DIR/packages.x86_64"
         echo "partitionmanager" >> "$PROFILE_DIR/packages.x86_64"
 
+        # Add LXDE packages
+        echo "lxde" >> "$PROFILE_DIR/packages.x86_64"
+        echo "lxsession" >> "$PROFILE_DIR/packages.x86_64"
+        echo "openbox" >> "$PROFILE_DIR/packages.x86_64"
+        echo "pcmanfm" >> "$PROFILE_DIR/packages.x86_64"
+
         # Enable SDDM service to start on boot
         mkdir -p "$PROFILE_DIR/airootfs/etc/systemd/system/"
         ln -s /usr/lib/systemd/system/sddm.service "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
@@ -219,7 +225,7 @@ jobs:
           using the ${{ github.event.inputs.profile_name }} archiso profile.
           Includes the 'arch.sh' script in /root/arch.sh.
           Root user's default shell set to /bin/bash.
-          Now includes 'htop', 'iotop', KDE Plasma (Wayland and X11 sessions), Dolphin, Konsole, and KDE Partition Manager.
+          Now includes 'htop', 'iotop', KDE Plasma (Wayland and X11 sessions), Dolphin, Konsole, KDE Partition Manager, and LXDE.
           Based on Arch Linux packages available at build time.
           Kernel version (from ISO): ${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}
         prerelease: false
