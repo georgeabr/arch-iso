@@ -113,23 +113,18 @@ jobs:
 
         # --- Add _airootfs_root_install function to profiledef.sh to perform a full update inside airootfs ---
         PROFILEDEF_PATH="$PROFILE_DIR/profiledef.sh"
-        if ! grep -q "_airootfs_root_install" "$PROFILEDEF_PATH"; then
-            echo "Adding _airootfs_root_install function to $PROFILEDEF_PATH"
-            cat << 'EOF_PROFILEDEF' >> "$PROFILEDEF_PATH"
-
-_airootfs_root_install() {
-    echo "Running full system upgrade inside the airootfs..."
-    # Initialize pacman keyring and populate with Arch Linux keys
-    # These might already be done by mkarchiso, but good to ensure
-    pacman-key --init
-    pacman-key --populate archlinux
-
-    # Perform a full system upgrade inside the airootfs
-    pacman -Syyu --noconfirm
-}
-EOF_PROFILEDEF
+        echo "Checking for _airootfs_root_install function in $PROFILEDEF_PATH"
+        if ! grep -q "_airootfs_root_install()" "$PROFILEDEF_PATH"; then
+            echo "Adding _airootfs_root_install function to $PROFILEDEF_PATH using printf"
+            printf "%s\n" "" >> "$PROFILEDEF_PATH" # Add a newline for separation
+            printf "%s\n" "_airootfs_root_install() {" >> "$PROFILEDEF_PATH"
+            printf "%s\n" "    echo \"Running full system upgrade inside the airootfs...\"" >> "$PROFILEDEF_PATH"
+            printf "%s\n" "    pacman-key --init" >> "$PROFILEDEF_PATH"
+            printf "%s\n" "    pacman-key --populate archlinux" >> "$PROFILEDEF_PATH"
+            printf "%s\n" "    pacman -Syyu --noconfirm" >> "$PROFILEDEF_PATH"
+            printf "%s\n" "}" >> "$PROFILEDEF_PATH"
         else
-            echo "_airootfs_root_install function already exists in $PROFILEDEF_PATH. Skipping addition."
+            echo "_airootfs_root_install function already exists in $PROFILEDEF_PATH. Manual intervention might be needed if it's not performing the desired update."
         fi
 
         echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
