@@ -110,17 +110,15 @@ jobs:
         # Set X11 as the default session for SDDM by creating a drop-in config
         mkdir -p "$PROFILE_DIR/airootfs/etc/sddm.conf.d"
         echo "Setting SDDM default session to plasma-x11.desktop."
-        cat << 'EOF_SDDM_DEFAULT' > "$PROFILE_DIR/airootfs/etc/sddm.conf.d/default-session.conf"
-[General]
-Session=plasma-x11.desktop
-EOF_SDDM_DEFAULT
+        # Using echo -e to avoid YAML parsing issues with multi-line here-docs
+        echo -e "[General]\nSession=plasma-x11.desktop" > "$PROFILE_DIR/airootfs/etc/sddm.conf.d/default-session.conf"
 
 
         # --- Add _airootfs_root_install function to profiledef.sh to perform a full update inside airootfs ---
         PROFILEDEF_PATH="$PROFILE_DIR/profiledef.sh"
         echo "Checking for _airootfs_root_install function in $PROFILEDEF_PATH"
         if ! grep -q "_airootfs_root_install()" "$PROFILEDEF_PATH"; then
-            echo "Adding _airootfs_root_install function to $PROFILEDEF_PATH using here-doc"
+            echo "Adding _airootfs_root_install function to $PROFILEDEF_PATH using here-doc for robust YAML parsing"
             # The content between 'EOF_PROFILEDEF' markers below must be indented
             # at the same level as the 'cat <<' command itself (typically 10 spaces).
             # The closing 'EOF_PROFILEDEF' marker MUST also be at this same indentation level.
