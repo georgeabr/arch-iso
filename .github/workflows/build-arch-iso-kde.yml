@@ -33,7 +33,7 @@ jobs:
       shell: bash
       run: |
         # Ensure system is fully up-to-date and package databases are synced
-        pacman -Syu --noconfirm || true # Use || true to allow continuation if no updates are available, or for minor errors
+        pacman -Syyu --noconfirm || true # Use || true to allow continuation if no updates are available, or for minor errors
 
         # Install necessary build tools
         pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux
@@ -59,6 +59,11 @@ jobs:
         # Set root user's default shell to /bin/bash
         sed -i 's/^root:x:0:0:root:\/root:\/bin\/bash/root:x:0:0:root:\/root:\/bin\/bash/' "$PROFILE_DIR/airootfs/etc/passwd" || \
         echo "Root entry not found or already set to bash. Skipping sed command for root shell."
+
+        # --- Update mirrorlist for airootfs to ensure latest packages are pulled ---
+        echo "Fetching and preparing latest mirrorlist for airootfs..."
+        mkdir -p "$PROFILE_DIR/airootfs/etc/pacman.d/"
+        curl -s "https://archlinux.org/mirrorlist/all/" | sed -e 's/^#Server/Server/' > "$PROFILE_DIR/airootfs/etc/pacman.d/mirrorlist"
 
         # Add htop and iotop packages to the profile's package list
         echo "htop" >> "$PROFILE_DIR/packages.x86_64"
@@ -96,10 +101,15 @@ jobs:
       id: build_iso_step
       shell: bash
       run: |
-        # This pacman -Syu is crucial to ensure the host build environment has the very latest packages
+        # This pacman -Syyu is crucial to ensure the host build environment has the very latest packages
         # and synchronized databases, from which mkarchiso will then pull its packages.
-        echo "Running full system upgrade to ensure latest packages are available for ISO build..."
-        pacman -Syu --noconfirm || true # Use || true to allow continuation even if no updates or minor errors occur
+        echo "Running full system upgrade to ensure latest packages are available for ISO build (forced sync)..."
+        pacman -Syyu --noconfirm || true # Use || true to allow continuation even if no updates or minor errors occur
+
+        # Get the kernel version that will be installed on the ISO
+        KERNEL_VERSION=$(pacman -Qi linux | grep Version | awk '{print $3}' | cut -d'-' -f1)
+        echo "Detected kernel version for ISO: $KERNEL_VERSION"
+        echo "KERNEL_VERSION=$KERNEL_VERSION" >> "$GITHUB_OUTPUT"
 
         mkarchiso -v ${{ steps.prepare_profile.outputs.PROFILE_DIR }}
         ACTUAL_ISO_FILE=$(ls -1 out/*.iso | head -n 1) # Get the actual ISO filename
@@ -147,4 +157,4 @@ jobs:
           Root user's default shell set to /bin/bash.
           Now includes 'htop', 'iotop', KDE Plasma (Wayland and X11 sessions), Dolphin, Konsole, and KDE Partition Manager.
           Based on Arch Linux packages available at build time.
-          Kernel version (from ISO): ${{ steps.build_metadata.outputs.KERNEL_VERSION }} (placeholder if not extracted)
+          Kernel version (from ISO): ${{ steps.build_iso_step.outputs.KERNEL_VERSION }}
