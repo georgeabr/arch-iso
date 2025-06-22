@@ -35,8 +35,8 @@ jobs:
         # Ensure system is fully up-to-date and package databases are synced
         pacman -Syyu --noconfirm || true # Use || true to allow continuation if no updates are available, or for minor errors
 
-        # Install necessary build tools
-        pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux
+        # Install necessary build tools, including the 'linux' package for version detection
+        pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux linux
 
     - name: Prepare Archiso Build Profile, Add Custom Script, Set Root Shell, and Add Extra Packages
       id: prepare_profile
