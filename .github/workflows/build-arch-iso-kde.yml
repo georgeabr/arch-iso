@@ -127,12 +127,11 @@ jobs:
         mkdir -p "$PROFILE_DIR/airootfs/etc/gdm/"
         echo "Configuring GDM autologin for 'george' user."
         # Create or modify /etc/gdm/custom.conf
-cat <<EOF > "$PROFILE_DIR/airootfs/etc/gdm/custom.conf"
-# GDM configuration file
-[daemon]
-AutomaticLoginEnable=True
-AutomaticLogin=george
-EOF
+        mkdir -p "$PROFILE_DIR/airootfs/etc/gdm/"
+        echo "# GDM configuration file" > "$PROFILE_DIR/airootfs/etc/gdm/custom.conf"
+        echo "[daemon]" >> "$PROFILE_DIR/airootfs/etc/gdm/custom.conf"
+        echo "AutomaticLoginEnable=True" >> "$PROFILE_DIR/airootfs/etc/gdm/custom.conf"
+        echo "AutomaticLogin=george" >> "$PROFILE_DIR/airootfs/etc/gdm/custom.conf"
         echo "GDM autologin configured."
 
 
