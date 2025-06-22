@@ -143,8 +143,8 @@ EOF_GDM_CONF
         sed -i '/^_airootfs_root_install() {/,/^}$/d' "$PROFILEDEF_PATH" || true
         echo "Adding _airootfs_root_install function to $PROFILEDEF_PATH with user creation and verbose logging."
 
-        # Use a heredoc to append the function content directly
-        cat << 'EOF_PROFILEDEF_FUNCTION' >> "$PROFILEDEF_PATH"
+        # Use a heredoc to append the function content directly. The EOF_PROFILEDEF_FUNCTION MUST be at column 1.
+cat << 'EOF_PROFILEDEF_FUNCTION' >> "$PROFILEDEF_PATH"
 _airootfs_root_install() {
     set -euxo pipefail
     echo "--- Starting _airootfs_root_install function ---"
