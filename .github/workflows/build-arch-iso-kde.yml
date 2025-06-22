@@ -141,47 +141,46 @@ EOF_GDM_CONF
         echo "Checking for _airootfs_root_install function in $PROFILEDEF_PATH"
         # Temporarily remove existing _airootfs_root_install to ensure a clean addition
         sed -i '/^_airootfs_root_install() {/,/^}$/d' "$PROFILEDEF_PATH" || true
-        echo "Adding _airootfs_root_install function to $PROFILEDEF_PATH with user creation"
+        echo "Adding _airootfs_root_install function to $PROFILEDEF_PATH with user creation and verbose logging."
 
-        # Build the function content in a shell variable to avoid YAML multi-line string issues
-        FUNCTION_CONTENT=""
-        FUNCTION_CONTENT+="_airootfs_root_install() {\n"
-        FUNCTION_CONTENT+="    set -euxo pipefail\n"
-        FUNCTION_CONTENT+="    echo \"--- Starting _airootfs_root_install function ---\"\n" # Added for verbosity
-        FUNCTION_CONTENT+="    echo \"Running full system upgrade inside the airootfs...\"\n"
-        FUNCTION_CONTENT+="    pacman-key --init\n"
-        FUNCTION_CONTENT+="    pacman-key --populate archlinux\n"
-        FUNCTION_CONTENT+="    pacman -Syyu --noconfirm\n"
-        FUNCTION_CONTENT+="\n"
-        FUNCTION_CONTENT+="    echo \"Attempting to create user 'george' with password 'parola' and add to wheel group...\"\n" # Added for verbosity
-        FUNCTION_CONTENT+="    if ! id -u george &>/dev/null; then\n"
-        FUNCTION_CONTENT+="        echo \"'george' user does not exist. Creating now.\"\n" # Added for verbosity
-        FUNCTION_CONTENT+="        useradd -m -g users -G wheel,storage,power -s /bin/bash george\n"
-        FUNCTION_CONTENT+="        echo \"Setting password for 'george' user.\"\n" # Added for verbosity
-        FUNCTION_CONTENT+="        echo 'george:parola' | chpasswd\n"
-        FUNCTION_CONTENT+="        echo \"User 'george' created and password set successfully.\"\n" # Added for verbosity
-        FUNCTION_CONTENT+="    else\n"
-        FUNCTION_CONTENT+="        echo \"User 'george' already exists. Skipping user creation.\"\n" # Added for verbosity
-        FUNCTION_CONTENT+="    fi\n"
-        FUNCTION_CONTENT+="    echo \"Verifying 'george' user creation and group membership...\"\n" # Added for verbosity
-        FUNCTION_CONTENT+="    id george\n"
-        FUNCTION_CONTENT+="    groups george\n"
-        FUNCTION_CONTENT+="\n"
-        FUNCTION_CONTENT+="    echo \"Configuring sudoers for wheel group...\"\n" # Added for verbosity
-        FUNCTION_CONTENT+="    pacman -S --noconfirm sudo || true\n"
-        FUNCTION_CONTENT+="    if grep -q '^# %wheel ALL=(ALL:ALL) ALL' /etc/sudoers; then\n"
-        FUNCTION_CONTENT+="        echo \"Uncommenting wheel group in sudoers.\"\n" # Added for verbosity
-        FUNCTION_CONTENT+="        sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers\n"
-        FUNCTION_CONTENT+="        echo \"Sudoers file updated for wheel group.\"\n" # Added for verbosity
-        FUNCTION_CONTENT+="    else\n"
-        FUNCTION_CONTENT+="        echo \"Sudoers file already configured for wheel group or line not found as expected. Skipping sudoers modification.\"\n" # Added for verbosity
-        FUNCTION_CONTENT+="    fi\n"
-        FUNCTION_CONTENT+="    echo \"Verifying sudoers entry for wheel group...\"\n" # Added for verbosity
-        FUNCTION_CONTENT+="    grep '%wheel' /etc/sudoers\n"
-        FUNCTION_CONTENT+="    echo \"--- Finished _airootfs_root_install function ---\"\n" # Added for verbosity
-        FUNCTION_CONTENT+="}\n"
-        # Append the content to profiledef.sh using echo -e
-        echo -e "$FUNCTION_CONTENT" >> "$PROFILEDEF_PATH"
+        # Use a heredoc to append the function content directly
+        cat << 'EOF_PROFILEDEF_FUNCTION' >> "$PROFILEDEF_PATH"
+_airootfs_root_install() {
+    set -euxo pipefail
+    echo "--- Starting _airootfs_root_install function ---"
+    echo "Running full system upgrade inside the airootfs..."
+    pacman-key --init
+    pacman-key --populate archlinux
+    pacman -Syyu --noconfirm
+
+    echo "Attempting to create user 'george' with password 'parola' and add to wheel group..."
+    if ! id -u george &>/dev/null; then
+        echo "'george' user does not exist. Creating now."
+        useradd -m -g users -G wheel,storage,power -s /bin/bash george
+        echo "Setting password for 'george' user."
+        echo 'george:parola' | chpasswd
+        echo "User 'george' created and password set successfully."
+    else
+        echo "User 'george' already exists. Skipping user creation."
+    fi
+    echo "Verifying 'george' user creation and group membership..."
+    id george
+    groups george
+
+    echo "Configuring sudoers for wheel group..."
+    pacman -S --noconfirm sudo || true
+    if grep -q '^# %wheel ALL=(ALL:ALL) ALL' /etc/sudoers; then
+        echo "Uncommenting wheel group in sudoers."
+        sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
+        echo "Sudoers file updated for wheel group."
+    else
+        echo "Sudoers file already configured for wheel group or line not found as expected. Skipping sudoers modification."
+    fi
+    echo "Verifying sudoers entry for wheel group..."
+    grep '%wheel' /etc/sudoers
+    echo "--- Finished _airootfs_root_install function ---"
+}
+EOF_PROFILEDEF_FUNCTION
 
         echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
 
