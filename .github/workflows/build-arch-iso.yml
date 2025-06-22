@@ -1,4 +1,4 @@
-name: Build Custom Arch Linux ISO with arch.sh, htop, iotop
+name: Build Arch Linux ISO with arch.sh, htop, iotop
 
 on:
   workflow_dispatch:
