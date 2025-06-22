@@ -104,34 +104,44 @@ jobs:
         echo "openbox" >> "$PROFILE_DIR/packages.x86_64"
         echo "pcmanfm" >> "$PROFILE_DIR/packages.x86_64"
 
+        # Add sudo package
+        echo "sudo" >> "$PROFILE_DIR/packages.x86_64"
+
         # Enable SDDM service to start on boot
         mkdir -p "$PROFILE_DIR/airootfs/etc/systemd/system/"
         ln -s /usr/lib/systemd/system/sddm.service "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
 
-        # --- Enable SDDM autologin for 'archiso' user with X11 session ---
+        # --- Enable SDDM autologin for 'george' user with X11 session ---
         mkdir -p "$PROFILE_DIR/airootfs/etc/sddm.conf.d"
-        echo "Enabling SDDM autologin for 'archiso' user with plasma-x11.desktop session."
-        echo -e "[Autologin]\nUser=archiso\nSession=plasma-x11.desktop" > "$PROFILE_DIR/airootfs/etc/sddm.conf.d/autologin.conf"
+        echo "Enabling SDDM autologin for 'george' user with plasma-x11.desktop session."
+        echo -e "[Autologin]\nUser=george\nSession=plasma-x11.desktop" > "$PROFILE_DIR/airootfs/etc/sddm.conf.d/autologin.conf"
 
 
-        # --- Add _airootfs_root_install function to profiledef.sh to perform a full update inside airootfs ---
+        # --- Add _airootfs_root_install function to profiledef.sh to perform a full update and create user inside airootfs ---
         PROFILEDEF_PATH="$PROFILE_DIR/profiledef.sh"
         echo "Checking for _airootfs_root_install function in $PROFILEDEF_PATH"
-        if ! grep -q "_airootfs_root_install()" "$PROFILEDEF_PATH"; then
-            echo "Adding _airootfs_root_install function to $PROFILEDEF_PATH by building string in shell"
-            # Build the function content in a shell variable to avoid YAML multi-line string issues
-            FUNCTION_CONTENT=""
-            FUNCTION_CONTENT+="_airootfs_root_install() {\n"
-            FUNCTION_CONTENT+="    echo \"Running full system upgrade inside the airootfs...\"\n"
-            FUNCTION_CONTENT+="    pacman-key --init\n"
-            FUNCTION_CONTENT+="    pacman-key --populate archlinux\n"
-            FUNCTION_CONTENT+="    pacman -Syyu --noconfirm\n"
-            FUNCTION_CONTENT+="}\n"
-            # Append the content to profiledef.sh using echo -e
-            echo -e "$FUNCTION_CONTENT" >> "$PROFILEDEF_PATH"
-        else
-            echo "_airootfs_root_install function already exists in $PROFILEDEF_PATH. Manual intervention might be needed if it's not performing the desired update."
-        fi
+        # Temporarily remove existing _airootfs_root_install to ensure a clean addition
+        sed -i '/^_airootfs_root_install() {/,/^}$/d' "$PROFILEDEF_PATH" || true
+        echo "Adding _airootfs_root_install function to $PROFILEDEF_PATH with user creation"
+
+        # Build the function content in a shell variable to avoid YAML multi-line string issues
+        FUNCTION_CONTENT=""
+        FUNCTION_CONTENT+="_airootfs_root_install() {\n"
+        FUNCTION_CONTENT+="    echo \"Running full system upgrade inside the airootfs...\"\n"
+        FUNCTION_CONTENT+="    pacman-key --init\n"
+        FUNCTION_CONTENT+="    pacman-key --populate archlinux\n"
+        FUNCTION_CONTENT+="    pacman -Syyu --noconfirm\n"
+        FUNCTION_CONTENT+="\n"
+        FUNCTION_CONTENT+="    echo \"Creating user 'george' with password 'parola' and adding to wheel group...\"\n"
+        FUNCTION_CONTENT+="    useradd -m -g users -G wheel,storage,power -s /bin/bash george\n"
+        FUNCTION_CONTENT+="    echo 'george:parola' | chpasswd\n"
+        FUNCTION_CONTENT+="\n"
+        FUNCTION_CONTENT+="    echo \"Configuring sudoers for wheel group...\"\n"
+        FUNCTION_CONTENT+="    # Uncomment %wheel ALL=(ALL:ALL) ALL in /etc/sudoers\n"
+        FUNCTION_CONTENT+="    sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers\n"
+        FUNCTION_CONTENT+="}\n"
+        # Append the content to profiledef.sh using echo -e
+        echo -e "$FUNCTION_CONTENT" >> "$PROFILEDEF_PATH"
 
         echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
 
@@ -171,9 +181,9 @@ jobs:
       shell: bash
       run: |
         ISO_FILE="${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}"
-        MOUNT_POINT="/mnt/iso"
+        MOUNT_POINT="/mnt/iso_kernel" # Use a dedicated mount point
+        
         mkdir -p "$MOUNT_POINT"
-
         echo "Mounting ISO: $ISO_FILE to $MOUNT_POINT"
         mount -o loop "$ISO_FILE" "$MOUNT_POINT"
 
@@ -184,7 +194,6 @@ jobs:
           echo "Found kernel image at: $KERNEL_PATH"
           KERNEL_INFO=$(file "$KERNEL_PATH")
           # Extract the version string from the file command output (e.g., "version 6.8.9-arch1-2")
-          # This regex specifically looks for "version X.Y.Z-..."
           EXTRACTED_VERSION=$(echo "$KERNEL_INFO" | grep -oP 'version \K[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -n 1)
           if [ -n "$EXTRACTED_VERSION" ]; then
             KERNEL_VERSION="$EXTRACTED_VERSION"
@@ -200,6 +209,47 @@ jobs:
 
         echo "Unmounting ISO"
         umount "$MOUNT_POINT" || true # Use || true to prevent job failure if unmount fails (e.g., already unmounted)
+        rmdir "$MOUNT_POINT" || true
+
+    - name: Extract QT/KDE Version from ISO
+      id: extract_desktop_versions
+      shell: bash
+      run: |
+        ISO_FILE="${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}"
+        MOUNT_POINT="/mnt/iso_desktop" # Use a different mount point
+        AIROOTFS_PATH="$MOUNT_POINT/airootfs"
+        
+        mkdir -p "$MOUNT_POINT"
+        echo "Mounting ISO: $ISO_FILE to $MOUNT_POINT"
+        mount -o loop "$ISO_FILE" "$MOUNT_POINT"
+
+        KDE_VERSION="N/A"
+        QT_VERSION="N/A"
+
+        # Check for plasma-workspace version within the airootfs
+        # Use pacman -Q --root to query packages in the mounted filesystem
+        PLASMA_PKG_INFO=$(pacman -Q --root "$AIROOTFS_PATH" plasma-workspace 2>/dev/null || true)
+        if echo "$PLASMA_PKG_INFO" | grep -q "plasma-workspace"; then
+            KDE_VERSION=$(echo "$PLASMA_PKG_INFO" | awk '{print $2}' | cut -d'-' -f1)
+            echo "Found KDE Plasma (plasma-workspace) version: $KDE_VERSION"
+        else
+            echo "plasma-workspace package not found in airootfs."
+        fi
+
+        # Check for qt6-base version within the airootfs
+        QT_PKG_INFO=$(pacman -Q --root "$AIROOTFS_PATH" qt6-base 2>/dev/null || true)
+        if echo "$QT_PKG_INFO" | grep -q "qt6-base"; then
+            QT_VERSION=$(echo "$QT_PKG_INFO" | awk '{print $2}' | cut -d'-' -f1)
+            echo "Found Qt6 (qt6-base) version: $QT_VERSION"
+        else
+            echo "qt6-base package not found in airootfs."
+        fi
+
+        echo "KDE_VERSION_ISO=$KDE_VERSION" >> "$GITHUB_OUTPUT"
+        echo "QT_VERSION_ISO=$QT_VERSION" >> "$GITHUB_OUTPUT"
+
+        echo "Unmounting ISO"
+        umount "$MOUNT_POINT" || true
         rmdir "$MOUNT_POINT" || true
 
     - name: List generated ISOs (for debugging)
@@ -226,8 +276,11 @@ jobs:
           Includes the 'arch.sh' script in /root/arch.sh.
           Root user's default shell set to /bin/bash.
           Now includes 'htop', 'iotop', KDE Plasma (Wayland and X11 sessions), Dolphin, Konsole, KDE Partition Manager, and LXDE.
+          Autologin enabled for 'george' user into KDE X11 session (password: parola).
           Based on Arch Linux packages available at build time.
           Kernel version (from ISO): ${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}
+          KDE Plasma version (from ISO): ${{ steps.extract_desktop_versions.outputs.KDE_VERSION_ISO }}
+          Qt version (from ISO): ${{ steps.extract_desktop_versions.outputs.QT_VERSION_ISO }}
         prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
