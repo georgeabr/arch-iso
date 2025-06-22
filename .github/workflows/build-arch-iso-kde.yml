@@ -32,6 +32,10 @@ jobs:
     - name: Install archiso and build dependencies within the container
       shell: bash
       run: |
+        # Ensure system is fully up-to-date and package databases are synced
+        pacman -Syu --noconfirm || true # Use || true to allow continuation if no updates are available, or for minor errors
+
+        # Install necessary build tools
         pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux
 
     - name: Prepare Archiso Build Profile, Add Custom Script, Set Root Shell, and Add Extra Packages
@@ -92,6 +96,11 @@ jobs:
       id: build_iso_step
       shell: bash
       run: |
+        # This pacman -Syu is crucial to ensure the host build environment has the very latest packages
+        # and synchronized databases, from which mkarchiso will then pull its packages.
+        echo "Running full system upgrade to ensure latest packages are available for ISO build..."
+        pacman -Syu --noconfirm || true # Use || true to allow continuation even if no updates or minor errors occur
+
         mkarchiso -v ${{ steps.prepare_profile.outputs.PROFILE_DIR }}
         ACTUAL_ISO_FILE=$(ls -1 out/*.iso | head -n 1) # Get the actual ISO filename
         echo "ACTUAL_ISO_FILE=$ACTUAL_ISO_FILE" >> "$GITHUB_OUTPUT"
