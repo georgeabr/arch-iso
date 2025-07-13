@@ -73,7 +73,7 @@ jobs:
           # --- START OF ZSTD COMPRESSION MODIFICATIONS (Broken Down) ---
           # Step 1: Change the compression algorithm from 'xz' to 'zstd'
           # and explicitly set a faster compression level (e.g., 3).
-          # This replaces '-comp' 'xz' with '-comp' 'zstd' '-Xcompression-level' '3'.
+          # This replaces '-comp' 'xz' with '-comp' 'zstd' '-Xcompression-level' '5'.
           # We use '|' as the sed delimiter to avoid issues with '/' in file paths or text.
           sed -i "s|'-comp' 'xz'|'-comp' 'zstd' '-Xcompression-level' '3'|" "$PROFILE/profiledef.sh"
 
