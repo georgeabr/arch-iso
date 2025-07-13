@@ -146,4 +146,5 @@ jobs:
             Now includes `htop` and `iotop` packages.
             Based on Arch Linux packages available at build time.
             Kernel version (from Arch repo): `${{ steps.fetch_kernel.outputs.KERNEL_VERSION_REPO }}`
+            Use `startx` to launch XFCE.
           prerelease: false
