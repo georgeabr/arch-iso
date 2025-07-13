@@ -202,7 +202,7 @@ jobs:
           body: |
             Custom Arch Linux ISO built on ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
             using the `${{ github.event.inputs.profile_name }}` archiso profile.
-            Includes the 'arch.sh' script in `/root/arch.sh`.
+            Includes the `arch.sh` script in `/root/arch.sh`.
             Root user's default shell set to `/bin/bash`.
             Includes `htop`, `iotop`, `mc`, `gparted`.
             Based on Arch Linux packages available at build time.
