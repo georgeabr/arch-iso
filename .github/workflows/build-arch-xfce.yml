@@ -45,10 +45,14 @@ jobs:
           for pkg in \
             xfce4 xfce4-goodies xorg-server xorg-xinit \
             lightdm lightdm-gtk-greeter networkmanager \
-            firefox htop iotop gparted
+            firefox htop iotop gparted network-manager-applet
           do
             echo "$pkg" >> "$PROFILE/packages.x86_64"
           done
+
+          # Enable NetworkManager service on boot
+          ln -s /usr/lib/systemd/system/NetworkManager.service \
+            "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"          
 
           sed -i \
             -e 's/^iso_name=.*/iso_name="archlinux-xfce"/' \
