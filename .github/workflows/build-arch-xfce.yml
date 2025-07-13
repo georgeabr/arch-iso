@@ -77,6 +77,11 @@ jobs:
             -o "$PROFILE/airootfs/root/arch.sh"
           chmod +x "$PROFILE/airootfs/root/arch.sh"
 
+          # ensure arch.sh stays executable on first interactive shell
+          echo 'chmod +x /root/arch.sh' \
+            >> "$PROFILE/airootfs/root/.bashrc"
+
+
           echo 'root:x:0:0:root:/root:/bin/bash' \
             > "$PROFILE/airootfs/etc/passwd"
 
