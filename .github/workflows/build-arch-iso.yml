@@ -22,188 +22,193 @@ jobs:
     container:
       image: archlinux/archlinux:latest
       options: --privileged
-
     timeout-minutes: 120
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Install archiso and build dependencies within the container
-      shell: bash
-      run: |
-        pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux
+      - name: Install archiso and build dependencies within the container
+        shell: bash
+        run: |
+          pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux
 
-    - name: Prepare Archiso Build Profile, Add Custom Script, Set Root Shell, and Add Extra Packages
-      id: prepare_profile
-      shell: bash
-      run: |
-        PROFILE_DIR="archiso_build_profile"
-        INPUT_PROFILE_NAME="${{ github.event.inputs.profile_name }}"
-        SCRIPT_URL="https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh"
-        SCRIPT_FILENAME="arch.sh"
-        SCRIPT_DEST_PATH="$PROFILE_DIR/airootfs/root/$SCRIPT_FILENAME"
+      - name: Prepare Archiso Build Profile, Add Custom Script, Set Root Shell, and Add Extra Packages
+        id: prepare_profile
+        shell: bash
+        run: |
+          PROFILE_DIR="archiso_build_profile"
+          INPUT_PROFILE_NAME="${{ github.event.inputs.profile_name }}"
+          SCRIPT_URL="https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh"
+          SCRIPT_FILENAME="arch.sh"
+          SCRIPT_DEST_PATH="$PROFILE_DIR/airootfs/root/$SCRIPT_FILENAME"
 
-        # 1. Copy the chosen archiso profile
-        if [ -d "./$INPUT_PROFILE_NAME" ]; then
-          echo "Using custom profile from repository: ./$INPUT_PROFILE_NAME"
-          cp -r "./$INPUT_PROFILE_NAME" "$PROFILE_DIR"
-        elif [ -d "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" ]; then
-          echo "Using official archiso profile: /usr/share/archiso/configs/$INPUT_PROFILE_NAME"
-          cp -r "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" "$PROFILE_DIR"
-        else
-          echo "Error: Profile '$INPUT_PROFILE_NAME' not found in repository or official configs."
-          exit 1
-        fi
+          # 1. Copy the chosen archiso profile
+          if [ -d "./$INPUT_PROFILE_NAME" ]; then
+            echo "Using custom profile from repository: ./$INPUT_PROFILE_NAME"
+            cp -r "./$INPUT_PROFILE_NAME" "$PROFILE_DIR"
+          elif [ -d "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" ]; then
+            echo "Using official archiso profile: /usr/share/archiso/configs/$INPUT_PROFILE_NAME"
+            cp -r "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" "$PROFILE_DIR"
+          else
+            echo "Error: Profile '$INPUT_PROFILE_NAME' not found in repository or official configs."
+            exit 1
+          fi
 
-        # 2. Add the custom script (arch.sh)
-        mkdir -p "$(dirname "$SCRIPT_DEST_PATH")"
-        echo "Downloading $SCRIPT_URL to $SCRIPT_DEST_PATH"
-        curl -sSL "$SCRIPT_URL" -o "$SCRIPT_DEST_PATH"
-        echo "Setting executable permissions for $SCRIPT_DEST_PATH"
-        chmod +x "$SCRIPT_DEST_PATH"
+          # 2. Add the custom script (arch.sh)
+          mkdir -p "$(dirname "$SCRIPT_DEST_PATH")"
+          echo "Downloading $SCRIPT_URL to $SCRIPT_DEST_PATH"
+          curl -sSL "$SCRIPT_URL" -o "$SCRIPT_DEST_PATH"
+          echo "Setting executable permissions for $SCRIPT_DEST_PATH"
+          chmod +x "$SCRIPT_DEST_PATH"
 
-        # Ensure it'll stay executable on first login shell (TTY auto-login)
-        echo 'chmod +x /root/arch.sh' \
-          >> "$PROFILE/airootfs/root/.bash_profile"        
+          # Ensure it'll stay executable on first login shell (TTY auto-login)
+          echo 'chmod +x /root/arch.sh' \
+            >> "$PROFILE_DIR/airootfs/root/.bash_profile"
 
-        # 3. Ensure root's default shell in the ISO is /bin/bash
-        PASSWD_FILE="$PROFILE_DIR/airootfs/etc/passwd"
-        echo "Ensuring root's shell in $PASSWD_FILE is /bin/bash"
-        sed -i 's/^root:x:0:0:root:\/root:\/.*$/root:x:0:0:root:\/root:\/bin\/bash/' "$PASSWD_FILE"
-        grep '^root:' "$PASSWD_FILE" # For logging, to confirm the change
+          # 3. Ensure root's default shell in the ISO is /bin/bash
+          PASSWD_FILE="$PROFILE_DIR/airootfs/etc/passwd"
+          echo "Ensuring root's shell in $PASSWD_FILE is /bin/bash"
+          sed -i 's/^root:x:0:0:root:\/root:\/.*$/root:x:0:0:root:\/root:\/bin\/bash/' "$PASSWD_FILE"
+          grep '^root:' "$PASSWD_FILE" # For logging, to confirm the change
 
-        # 4. Add htop and iotop to the list of packages to be installed in the ISO
-        PACKAGES_FILE="$PROFILE_DIR/packages.x86_64"
-        if [ -f "$PACKAGES_FILE" ]; then
-            echo "Adding htop and iotop to $PACKAGES_FILE"
-            echo "htop" >> "$PACKAGES_FILE"
-            echo "iotop" >> "$PACKAGES_FILE"
-            grep -E '^(htop|iotop)$' "$PACKAGES_FILE" || echo "htop or iotop not found in $PACKAGES_FILE after append. Check file format."
-        else
-            echo "Warning: $PACKAGES_FILE not found. Cannot add htop or iotop."
-        fi
+          # 4. Add htop and iotop to the list of packages to be installed in the ISO
+          PACKAGES_FILE="$PROFILE_DIR/packages.x86_64"
+          if [ -f "$PACKAGES_FILE" ]; then
+              echo "Adding htop and iotop to $PACKAGES_FILE"
+              echo "htop" >> "$PACKAGES_FILE"
+              echo "iotop" >> "$PACKAGES_FILE"
+              grep -E '^(htop|iotop)$' "$PACKAGES_FILE" || echo "htop or iotop not found in $PACKAGES_FILE after append. Check file format."
+          else
+              echo "Warning: $PACKAGES_FILE not found. Cannot add htop or iotop."
+          fi
 
           # --- START OF ZSTD COMPRESSION MODIFICATIONS (Broken Down) ---
           # Step 1: Change the compression algorithm from 'xz' to 'zstd'
-          # and explicitly set a faster compression level (e.g., 3).
+          # and explicitly set a faster compression level (e.g., 5).
           # This replaces '-comp' 'xz' with '-comp' 'zstd' '-Xcompression-level' '5'.
           # We use '|' as the sed delimiter to avoid issues with '/' in file paths or text.
-          sed -i "s|'-comp' 'xz'|'-comp' 'zstd' '-Xcompression-level' '5'|" "$PROFILE/profiledef.sh"
+          sed -i "s|'-comp' 'xz'|'-comp' 'zstd' '-Xcompression-level' '5'|" "$PROFILE_DIR/profiledef.sh"
 
           # Step 2: Remove the xz-specific BCJ filter.
           # This removes the '-Xbcj' 'x86' part which is not used by zstd.
-          sed -i "s|'-Xbcj' 'x86'||" "$PROFILE/profiledef.sh"
+          sed -i "s|'-Xbcj' 'x86'||" "$PROFILE_DIR/profiledef.sh"
 
           # Step 3: Remove the xz-specific dictionary size option.
           # This removes the '-Xdict-size' '1M' part which is also not used by zstd.
-          sed -i "s|'-Xdict-size' '1M'||" "$PROFILE/profiledef.sh"
+          sed -i "s|'-Xdict-size' '1M'||" "$PROFILE_DIR/profiledef.sh"
           # --- END OF ZSTD COMPRESSION MODIFICATIONS (Broken Down) ---
 
           # Set console keymap & font
-          mkdir -p "$PROFILE/airootfs/etc"
-          echo "KEYMAP=uk"    > "$PROFILE/airootfs/etc/vconsole.conf"
-          echo "XKBLAYOUT=gb" >> "$PROFILE/airootfs/etc/vconsole.conf"
-          echo "FONT=ter-922b" >> "$PROFILE/airootfs/etc/vconsole.conf"
-       
+          mkdir -p "$PROFILE_DIR/airootfs/etc"
+          echo "KEYMAP=uk"    > "$PROFILE_DIR/airootfs/etc/vconsole.conf"
+          echo "XKBLAYOUT=gb" >> "$PROFILE_DIR/airootfs/etc/vconsole.conf"
+          echo "FONT=ter-922b" >> "$PROFILE_DIR/airootfs/etc/vconsole.conf"
 
-        echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
+          echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
 
-    - name: Define Build Metadata and Output Directory
-      id: build_metadata
-      shell: bash
-      run: |
-        if [ -n "${{ github.event.inputs.build_date }}" ]; then
-          BUILD_TIMESTAMP="${{ github.event.inputs.build_date }}"
-        else
-          BUILD_TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
-        fi
+      - name: Verify profiledef.sh contents
+        shell: bash
+        run: |
+          echo "--- Contents of ${{ steps.prepare_profile.outputs.PROFILE_DIR }}/profiledef.sh ---"
+          cat "${{ steps.prepare_profile.outputs.PROFILE_DIR }}/profiledef.sh"
+          echo "---------------------------------------------------------"
 
-        ISO_VERSION_IDENTIFIER="${GITHUB_REF_NAME:-$(echo $GITHUB_SHA | cut -c1-7)}"
-        ISO_OUTPUT_DIR="out"
-
-        echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> "$GITHUB_OUTPUT"
-        echo "ISO_VERSION_IDENTIFIER=$ISO_VERSION_IDENTIFIER" >> "$GITHUB_OUTPUT"
-        echo "ISO_OUTPUT_DIR=$ISO_OUTPUT_DIR" >> "$GITHUB_OUTPUT"
-
-    - name: Build Arch Linux ISO
-      id: build_iso_step
-      shell: bash
-      run: |
-        mkarchiso -v -o ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} ${{ steps.prepare_profile.outputs.PROFILE_DIR }}/
-        
-        ACTUAL_ISO_FILE=$(find ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} -name "*.iso" -print -quit)
-        if [ -z "$ACTUAL_ISO_FILE" ]; then
-          echo "Error: No ISO file found in ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}"
-          exit 1
-        fi
-        echo "Found ISO: $ACTUAL_ISO_FILE"
-        echo "ACTUAL_ISO_FILE=$ACTUAL_ISO_FILE" >> "$GITHUB_OUTPUT"
-
-    - name: Extract Kernel Version from ISO
-      id: extract_kernel_version
-      shell: bash
-      run: |
-        ISO_FILE="${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}"
-        MOUNT_POINT="/mnt/iso"
-        mkdir -p "$MOUNT_POINT"
-
-        echo "Mounting ISO: $ISO_FILE to $MOUNT_POINT"
-        mount -o loop "$ISO_FILE" "$MOUNT_POINT"
-
-        KERNEL_PATH=$(find "$MOUNT_POINT" -name "vmlinuz*" | head -n 1)
-        KERNEL_VERSION="Unknown"
-
-        if [ -n "$KERNEL_PATH" ]; then
-          echo "Found kernel image at: $KERNEL_PATH"
-          KERNEL_INFO=$(file "$KERNEL_PATH")
-          # Extract the version string from the file command output (e.g., "version 6.8.9-arch1-2")
-          # This regex specifically looks for "version X.Y.Z-..."
-          EXTRACTED_VERSION=$(echo "$KERNEL_INFO" | grep -oP 'version \K[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -n 1)
-          if [ -n "$EXTRACTED_VERSION" ]; then
-            KERNEL_VERSION="$EXTRACTED_VERSION"
+      - name: Define Build Metadata and Output Directory
+        id: build_metadata
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.build_date }}" ]; then
+            BUILD_TIMESTAMP="${{ github.event.inputs.build_date }}"
           else
-            echo "Could not extract specific version from: $KERNEL_INFO"
+            BUILD_TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
           fi
-        else
-          echo "Could not find vmlinuz file in the ISO."
-        fi
 
-        echo "Extracted Kernel Version: $KERNEL_VERSION"
-        echo "KERNEL_VERSION_ISO=$KERNEL_VERSION" >> "$GITHUB_OUTPUT"
+          ISO_VERSION_IDENTIFIER="${GITHUB_REF_NAME:-$(echo $GITHUB_SHA | cut -c1-7)}"
+          ISO_OUTPUT_DIR="out"
 
-        echo "Unmounting ISO"
-        umount "$MOUNT_POINT" || true # Use || true to prevent job failure if unmount fails (e.g., already unmounted)
-        rmdir "$MOUNT_POINT" || true
+          echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> "$GITHUB_OUTPUT"
+          echo "ISO_VERSION_IDENTIFIER=$ISO_VERSION_IDENTIFIER" >> "$GITHUB_OUTPUT"
+          echo "ISO_OUTPUT_DIR=$ISO_OUTPUT_DIR" >> "$GITHUB_OUTPUT"
 
-    - name: List generated ISOs (for debugging)
-      shell: bash
-      run: ls -lh ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}
+      - name: Build Arch Linux ISO
+        id: build_iso_step
+        shell: bash
+        run: |
+          mkarchiso -v -o ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} ${{ steps.prepare_profile.outputs.PROFILE_DIR }}/
+          
+          ACTUAL_ISO_FILE=$(find ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} -name "*.iso" -print -quit)
+          if [ -z "$ACTUAL_ISO_FILE" ]; then
+            echo "Error: No ISO file found in ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}"
+            exit 1
+          fi
+          echo "Found ISO: $ACTUAL_ISO_FILE"
+          echo "ACTUAL_ISO_FILE=$ACTUAL_ISO_FILE" >> "$GITHUB_OUTPUT"
 
-    - name: Upload ISO as Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: archlinux-custom-iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
-        path: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
-        retention-days: 7
+      - name: Extract Kernel Version from ISO
+        id: extract_kernel_version
+        shell: bash
+        run: |
+          ISO_FILE="${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}"
+          MOUNT_POINT="/mnt/iso"
+          mkdir -p "$MOUNT_POINT"
 
-    - name: Create GitHub Release (Optional)
-      if: github.ref == 'refs/heads/main'
-      uses: softprops/action-gh-release@v2
-      with:
-        files: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
-        tag_name: "iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
-        name: "Arch Linux Custom ISO ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
-        body: |
-          Custom Arch Linux ISO built on ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
-          using the `${{ github.event.inputs.profile_name }}` archiso profile.
-          Includes the 'arch.sh' script in `/root/arch.sh`.
-          Root user's default shell set to `/bin/bash`.
-          Includes `htop`, `iotop`, `mc`, `gparted`.
-          Based on Arch Linux packages available at build time.
-          Kernel version (from ISO): `${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}`
-          From a terminal, use `./arch.sh` to start the installation.
-          Installation is logged to a timestamped file like `install-20250418_1431.log`.
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          echo "Mounting ISO: $ISO_FILE to $MOUNT_POINT"
+          mount -o loop "$ISO_FILE" "$MOUNT_POINT"
+
+          KERNEL_PATH=$(find "$MOUNT_POINT" -name "vmlinuz*" | head -n 1)
+          KERNEL_VERSION="Unknown"
+
+          if [ -n "$KERNEL_PATH" ]; then
+            echo "Found kernel image at: $KERNEL_PATH"
+            KERNEL_INFO=$(file "$KERNEL_PATH")
+            # Extract the version string from the file command output (e.g., "version 6.8.9-arch1-2")
+            # This regex specifically looks for "version X.Y.Z-..."
+            EXTRACTED_VERSION=$(echo "$KERNEL_INFO" | grep -oP 'version \K[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -n 1)
+            if [ -n "$EXTRACTED_VERSION" ]; then
+              KERNEL_VERSION="$EXTRACTED_VERSION"
+            else
+              echo "Could not extract specific version from: $KERNEL_INFO"
+            fi
+          else
+            echo "Could not find vmlinuz file in the ISO."
+          fi
+
+          echo "Extracted Kernel Version: $KERNEL_VERSION"
+          echo "KERNEL_VERSION_ISO=$KERNEL_VERSION" >> "$GITHUB_OUTPUT"
+
+          echo "Unmounting ISO"
+          umount "$MOUNT_POINT" || true # Use || true to prevent job failure if unmount fails (e.g., already unmounted)
+          rmdir "$MOUNT_POINT" || true
+
+      - name: List generated ISOs (for debugging)
+        shell: bash
+        run: ls -lh ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}
+
+      - name: Upload ISO as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: archlinux-custom-iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
+          path: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
+          retention-days: 7
+
+      - name: Create GitHub Release (Optional)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
+          tag_name: "iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
+          name: "Arch Linux Custom ISO ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
+          body: |
+            Custom Arch Linux ISO built on ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
+            using the `${{ github.event.inputs.profile_name }}` archiso profile.
+            Includes the 'arch.sh' script in `/root/arch.sh`.
+            Root user's default shell set to `/bin/bash`.
+            Includes `htop`, `iotop`, `mc`, `gparted`.
+            Based on Arch Linux packages available at build time.
+            Kernel version (from ISO): `${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}`
+            From a terminal, use `./arch.sh` to start the installation.
+            Installation is logged to a timestamped file like `install-20250418_1431.log`.
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
