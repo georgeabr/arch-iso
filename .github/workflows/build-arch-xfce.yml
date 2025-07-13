@@ -27,7 +27,7 @@ jobs:
         run: |
           pacman -Sy --noconfirm \
             archiso squashfs-tools xorriso dosfstools \
-            p7zip curl util-linux binutils
+            p7zip curl util-linux binutils jq
 
       - name: Prepare XFCE profile
         id: prepare_profile
@@ -99,6 +99,16 @@ jobs:
           name: archlinux-xfce-iso-${{ steps.ts.outputs.build_timestamp }}
           path: ${{ steps.build_iso.outputs.iso_path }}
 
+      - name: Fetch latest kernel version from Arch repo
+        id: fetch_kernel
+        shell: bash
+        run: |
+          PKG_JSON=$(curl -fsSL 'https://archlinux.org/packages/core/x86_64/linux/json/')
+          PKGVER=$(echo "$PKG_JSON" | jq -r '.pkgver')
+          PKGREL=$(echo "$PKG_JSON" | jq -r '.pkgrel')
+          echo "KERNEL_VERSION_REPO=${PKGVER}-${PKGREL}" >> "$GITHUB_OUTPUT"
+
+
       - name: Create GitHub Release (Optional)
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
@@ -115,4 +125,5 @@ jobs:
             Root user's default shell set to /bin/bash.
             Now includes 'htop' and 'iotop' packages.
             Based on Arch Linux packages available at build time.
+            Kernel version (from Arch repo): ${{ steps.fetch_kernel.outputs.KERNEL_VERSION_REPO }}
           prerelease: false
