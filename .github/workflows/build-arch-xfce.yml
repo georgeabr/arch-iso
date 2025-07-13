@@ -77,6 +77,11 @@ jobs:
           echo 'autologin-session=xfce' \
             >> "$PROFILE/airootfs/etc/lightdm/lightdm.conf"
 
+          # Enable NetworkManager applet autostart in XFCE
+          mkdir -p "$PROFILE/airootfs/root/.config/autostart"
+          cp /usr/share/applications/nm-applet.desktop \
+            "$PROFILE/airootfs/root/.config/autostart/"
+
           echo "profile_dir=$PROFILE" >> "$GITHUB_OUTPUT"
 
       - name: Determine build timestamp
@@ -124,10 +129,10 @@ jobs:
           name: "Arch Linux XFCE ISO ${{ steps.ts.outputs.build_timestamp }}"
           body: |
             Arch Linux ISO built on ${{ steps.ts.outputs.build_timestamp }}
-            using the xfce-profile.
-            Includes the 'arch.sh' script in /root/arch.sh.
-            Root user's default shell set to /bin/bash.
-            Now includes 'htop' and 'iotop' packages.
+            using the `xfce-profile`.
+            Includes the `arch.sh` script in `/root/arch.sh`.
+            Root user's default shell set to `/bin/bash`.
+            Now includes `htop` and `iotop` packages.
             Based on Arch Linux packages available at build time.
-            Kernel version (from Arch repo): ${{ steps.fetch_kernel.outputs.KERNEL_VERSION_REPO }}
+            Kernel version (from Arch repo): `${{ steps.fetch_kernel.outputs.KERNEL_VERSION_REPO }}`
           prerelease: false
