@@ -4,9 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       build_date:
-        description: 'Timestamp (YYYYMMDD_HHMMSS). Leave empty for now.'
+        description: 'ISO build timestamp (YYYYMMDD_HHMMSS). Leave empty for current time.'
         required: false
         type: string
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -17,70 +20,76 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install archiso and tools
+      - name: Install archiso and dependencies
         run: |
           pacman -Sy --noconfirm \
             archiso squashfs-tools xorriso dosfstools \
             curl util-linux
 
-      - name: Prepare XFCE profile from releng
+      - name: Prepare XFCE profile
+        id: prepare
         run: |
           PROFILE=xfce-profile
-
-          # 1) Copy base releng profile
+          rm -rf "$PROFILE"
           cp -r /usr/share/archiso/configs/releng "$PROFILE"
 
-          # Add XFCE and utilities
-          cat >> xfce-profile/packages.x86_64 << 'EOF'
-          xfce4
-          xfce4-goodies
-          xorg-server
-          xorg-xinit
-          lightdm
-          lightdm-gtk-greeter
-          networkmanager
-          firefox
-          htop
-          iotop
-          gparted
-          EOF
-          
-          # 3) Rename ISO in profiledef.sh
+          # Append XFCE & utilities
+          echo xfce4 >> "$PROFILE/packages.x86_64"
+          echo xfce4-goodies >> "$PROFILE/packages.x86_64"
+          echo xorg-server >> "$PROFILE/packages.x86_64"
+          echo xorg-xinit >> "$PROFILE/packages.x86_64"
+          echo lightdm >> "$PROFILE/packages.x86_64"
+          echo lightdm-gtk-greeter >> "$PROFILE/packages.x86_64"
+          echo networkmanager >> "$PROFILE/packages.x86_64"
+          echo firefox >> "$PROFILE/packages.x86_64"
+          echo htop >> "$PROFILE/packages.x86_64"
+          echo iotop >> "$PROFILE/packages.x86_64"
+          echo gparted >> "$PROFILE/packages.x86_64"
+
+          # Rename ISO
           sed -i 's/^iso_name=.*/iso_name="archlinux-xfce"/' "$PROFILE/profiledef.sh"
           sed -i 's/^iso_label=.*/iso_label="ARCH_XFCE"/' "$PROFILE/profiledef.sh"
 
-          # 4) Drop in your script
-          curl -sSL "https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh" \
+          # Inject custom script
+          curl -fsSL \
+            https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh \
             -o "$PROFILE/airootfs/root/arch.sh"
           chmod +x "$PROFILE/airootfs/root/arch.sh"
 
-          # 5) Autologin XFCE as root
-          cat > "$PROFILE/airootfs/etc/lightdm/lightdm.conf" << 'EOF'
-[Seat:*]
-autologin-user=root
-autologin-session=xfce
-EOF
-          echo "exec startxfce4" > "$PROFILE/airootfs/root/.xinitrc"
+          # Auto-start XFCE as root
+          echo exec startxfce4 > "$PROFILE/airootfs/root/.xinitrc"
 
-      - name: Determine build timestamp
+          # LightDM autologin
+          echo "[Seat:*]" > "$PROFILE/airootfs/etc/lightdm/lightdm.conf"
+          echo "autologin-user=root" >> "$PROFILE/airootfs/etc/lightdm/lightdm.conf"
+          echo "autologin-session=xfce" >> "$PROFILE/airootfs/etc/lightdm/lightdm.conf"
+
+          # Export profile path
+          echo "profile_dir=$PROFILE" >> "$GITHUB_OUTPUT"
+
+      - name: Set build timestamp
         id: ts
         run: |
           TS="${{ github.event.inputs.build_date }}"
           [ -z "$TS" ] && TS=$(date '+%Y%m%d_%H%M%S')
           echo "timestamp=$TS" >> "$GITHUB_OUTPUT"
 
-      - name: Build ISO
+      - name: Build the ISO
+        id: iso
         run: |
-          mkarchiso -v -o out xfce-profile
-          # find the first ISO generated
-          ISO=$(find out -name '*.iso' -print -quit)
-          echo "iso=$ISO"
+          mkarchiso -v -o out "${{ steps.prepare.outputs.profile_dir }}"
+          ISO=$(find out -maxdepth 1 -name '*.iso' -print -quit)
+          if [ -z "$ISO" ]; then
+            echo "ERROR: ISO not found!" >&2
+            exit 1
+          fi
+          echo "iso_path=$ISO" >> "$GITHUB_OUTPUT"
 
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
           name: archlinux-xfce-iso-${{ steps.ts.outputs.timestamp }}
-          path: out/*.iso
+          path: ${{ steps.iso.outputs.iso_path }}
