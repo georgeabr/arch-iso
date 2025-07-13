@@ -63,6 +63,10 @@ jobs:
         echo "Setting executable permissions for $SCRIPT_DEST_PATH"
         chmod +x "$SCRIPT_DEST_PATH"
 
+        # Ensure it'll stay executable on first login shell (TTY auto-login)
+        echo 'chmod +x /root/arch.sh' \
+          >> "$PROFILE/airootfs/root/.bash_profile"        
+
         # 3. Ensure root's default shell in the ISO is /bin/bash
         PASSWD_FILE="$PROFILE_DIR/airootfs/etc/passwd"
         echo "Ensuring root's shell in $PASSWD_FILE is /bin/bash"
@@ -79,6 +83,29 @@ jobs:
         else
             echo "Warning: $PACKAGES_FILE not found. Cannot add htop or iotop."
         fi
+
+          # --- START OF ZSTD COMPRESSION MODIFICATIONS (Broken Down) ---
+          # Step 1: Change the compression algorithm from 'xz' to 'zstd'
+          # and explicitly set a faster compression level (e.g., 3).
+          # This replaces '-comp' 'xz' with '-comp' 'zstd' '-Xcompression-level' '5'.
+          # We use '|' as the sed delimiter to avoid issues with '/' in file paths or text.
+          sed -i "s|'-comp' 'xz'|'-comp' 'zstd' '-Xcompression-level' '5'|" "$PROFILE/profiledef.sh"
+
+          # Step 2: Remove the xz-specific BCJ filter.
+          # This removes the '-Xbcj' 'x86' part which is not used by zstd.
+          sed -i "s|'-Xbcj' 'x86'||" "$PROFILE/profiledef.sh"
+
+          # Step 3: Remove the xz-specific dictionary size option.
+          # This removes the '-Xdict-size' '1M' part which is also not used by zstd.
+          sed -i "s|'-Xdict-size' '1M'||" "$PROFILE/profiledef.sh"
+          # --- END OF ZSTD COMPRESSION MODIFICATIONS (Broken Down) ---
+
+          # Set console keymap & font
+          mkdir -p "$PROFILE/airootfs/etc"
+          echo "KEYMAP=uk"    > "$PROFILE/airootfs/etc/vconsole.conf"
+          echo "XKBLAYOUT=gb" >> "$PROFILE/airootfs/etc/vconsole.conf"
+          echo "FONT=ter-922b" >> "$PROFILE/airootfs/etc/vconsole.conf"
+       
 
         echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
 
@@ -175,7 +202,7 @@ jobs:
           Includes `htop`, `iotop`, `mc`, `gparted`.
           Based on Arch Linux packages available at build time.
           Kernel version (from ISO): `${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}`
-          From a terminal, use `chmod +x arch.sh; ./arch.sh` to start the installation.
+          From a terminal, use `./arch.sh` to start the installation.
           Installation is logged to a timestamped file like `install-20250418_1431.log`.
         prerelease: false
       env:
