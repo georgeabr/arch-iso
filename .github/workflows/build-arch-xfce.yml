@@ -27,7 +27,7 @@ jobs:
         run: |
           pacman -Sy --noconfirm \
             archiso squashfs-tools xorriso dosfstools \
-            p7zip curl util-linux
+            p7zip curl util-linux binutils
 
       - name: Prepare XFCE profile
         id: prepare_profile
