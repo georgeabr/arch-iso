@@ -10,7 +10,7 @@ Use `bash arch.sh` to start the custom installer.
 ```bash
 bash arch.sh
 ```
-Installation is logged to a timestamped file, for example `install-20250418_1431.log`.
+Installation is logged to a timestamped file, for example `install-20250418_1431.log`.  
 Use `tail -f` to monitor installation from another console.
 ```bash
 tail -f install-20250418_1431.log
