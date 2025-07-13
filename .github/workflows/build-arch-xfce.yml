@@ -1,0 +1,105 @@
+name: Build Arch Linux ISO with XFCE
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_date:
+        description: 'ISO Build Timestamp (YYYYMMDD_HHMMSS, leave empty for current time)'
+        required: false
+        type: string
+      profile_name:
+        description: 'Archiso profile name (default: xfce-profile)'
+        required: false
+        type: string
+        default: 'xfce-profile'
+
+permissions:
+  contents: write
+
+jobs:
+  build_iso:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux/archlinux:latest
+      options: --privileged
+
+    timeout-minutes: 120
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install archiso and dependencies
+      shell: bash
+      run: |
+        pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux
+
+    - name: Prepare XFCE Profile and Add Customizations
+      id: prepare_profile
+      shell: bash
+      run: |
+        PROFILE_DIR="archiso_build_profile"
+        INPUT_PROFILE_NAME="${{ github.event.inputs.profile_name }}"
+        SCRIPT_URL="https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh"
+        SCRIPT_FILENAME="arch.sh"
+        SCRIPT_DEST_PATH="$PROFILE_DIR/airootfs/root/$SCRIPT_FILENAME"
+
+        if [ -d "./$INPUT_PROFILE_NAME" ]; then
+          cp -r "./$INPUT_PROFILE_NAME" "$PROFILE_DIR"
+        elif [ -d "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" ]; then
+          cp -r "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" "$PROFILE_DIR"
+        else
+          echo "Profile '$INPUT_PROFILE_NAME' not found."
+          exit 1
+        fi
+
+        mkdir -p "$(dirname "$SCRIPT_DEST_PATH")"
+        curl -sSL "$SCRIPT_URL" -o "$SCRIPT_DEST_PATH"
+        chmod +x "$SCRIPT_DEST_PATH"
+
+        PASSWD_FILE="$PROFILE_DIR/airootfs/etc/passwd"
+        sed -i 's|^root:x:0:0:root:/root:/.*$|root:x:0:0:root:/root:/bin/bash|' "$PASSWD_FILE"
+
+        PACKAGES_FILE="$PROFILE_DIR/packages.x86_64"
+        echo -e "xfce4\nxfce4-goodies\nxorg-server\nxorg-xinit\nlightdm\nlightdm-gtk-greeter\nnetworkmanager\nfirefox\nhtop\niotop\ngparted" >> "$PACKAGES_FILE"
+
+        mkdir -p "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants"
+        ln -sf /usr/lib/systemd/system/NetworkManager.service "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
+        ln -sf /usr/lib/systemd/system/lightdm.service "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
+
+        echo "exec startxfce4" > "$PROFILE_DIR/airootfs/root/.xinitrc"
+
+        echo "[Seat:*]" > "$PROFILE_DIR/airootfs/etc/lightdm/lightdm.conf"
+        echo "autologin-user=root" >> "$PROFILE_DIR/airootfs/etc/lightdm/lightdm.conf"
+        echo "autologin-session=xfce" >> "$PROFILE_DIR/airootfs/etc/lightdm/lightdm.conf"
+
+        echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Define Build Metadata
+      id: build_metadata
+      shell: bash
+      run: |
+        BUILD_TIMESTAMP="${{ github.event.inputs.build_date || '' }}"
+        [ -z "$BUILD_TIMESTAMP" ] && BUILD_TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
+
+        ISO_VERSION_IDENTIFIER="${GITHUB_REF_NAME:-$(echo $GITHUB_SHA | cut -c1-7)}"
+        ISO_OUTPUT_DIR="out"
+
+        echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> "$GITHUB_OUTPUT"
+        echo "ISO_VERSION_IDENTIFIER=$ISO_VERSION_IDENTIFIER" >> "$GITHUB_OUTPUT"
+        echo "ISO_OUTPUT_DIR=$ISO_OUTPUT_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Build ISO
+      id: build_iso_step
+      shell: bash
+      run: |
+        mkarchiso -v -o ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} ${{ steps.prepare_profile.outputs.PROFILE_DIR }}/
+        ACTUAL_ISO_FILE=$(find ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }} -name "*.iso" -print -quit)
+        [ -z "$ACTUAL_ISO_FILE" ] && exit 1
+        echo "ACTUAL_ISO_FILE=$ACTUAL_ISO_FILE" >> "$GITHUB_OUTPUT"
+
+    - name: Upload ISO Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: archlinux-xfce-iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
+        path: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
