@@ -10,9 +10,10 @@ Use `bash arch.sh` to start the custom installer.
 ```bash
 bash arch.sh
 ```
-Use `tee` to also log onscreen installation to a file.
+Installation is logged to a timestamped file, for example `install-20250418_1431.log`.
+Use `tail -f` to monitor installation from another console.
 ```bash
-bash arch.sh 2>&1 | tee install-$(date +%Y%m%d_%H%M).log
+tail -f install-20250418_1431.log
 ```
 ### Connect via SSH from another computer
 - set password for `root` user from live ISO with `passwd`
