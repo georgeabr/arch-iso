@@ -170,11 +170,13 @@ jobs:
         body: |
           Custom Arch Linux ISO built on ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
           using the ${{ github.event.inputs.profile_name }} archiso profile.
-          Includes the 'arch.sh' script in /root/arch.sh.
-          Root user's default shell set to /bin/bash.
-          Now includes 'htop' and 'iotop' packages.
+          Includes the 'arch.sh' script in `/root/arch.sh`.
+          Root user's default shell set to `/bin/bash`.
+          Includes `htop`, `iotop`, `mc`, `gparted`.
           Based on Arch Linux packages available at build time.
-          Kernel version (from ISO): ${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}
+          Kernel version (from ISO): `${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}`
+          From a terminal, use `chmod +x arch.sh; ./arch.sh` to start the installation.
+          Installation is logged to a timestamped file like `install-20250418_1431.log`.
         prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
