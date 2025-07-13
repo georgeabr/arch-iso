@@ -84,6 +84,11 @@ jobs:
               echo "Warning: $PACKAGES_FILE not found. Cannot add htop or iotop."
           fi
 
+
+
+          mkdir -p \
+            "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants"          
+
           # Enable NetworkManager service on boot
           ln -s /usr/lib/systemd/system/NetworkManager.service \
             "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"          
