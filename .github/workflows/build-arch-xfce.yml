@@ -33,21 +33,21 @@ jobs:
           # 1) Copy base releng profile
           cp -r /usr/share/archiso/configs/releng "$PROFILE"
 
-          # 2) Add XFCE + utilities
-          cat >> "$PROFILE/packages.x86_64" << 'EOF'
-xfce4
-xfce4-goodies
-xorg-server
-xorg-xinit
-lightdm
-lightdm-gtk-greeter
-networkmanager
-firefox
-htop
-iotop
-gparted
-EOF
-
+          # Add XFCE and utilities
+          cat >> xfce-profile/packages.x86_64 << 'EOF'
+          xfce4
+          xfce4-goodies
+          xorg-server
+          xorg-xinit
+          lightdm
+          lightdm-gtk-greeter
+          networkmanager
+          firefox
+          htop
+          iotop
+          gparted
+          EOF
+          
           # 3) Rename ISO in profiledef.sh
           sed -i 's/^iso_name=.*/iso_name="archlinux-xfce"/' "$PROFILE/profiledef.sh"
           sed -i 's/^iso_label=.*/iso_label="ARCH_XFCE"/' "$PROFILE/profiledef.sh"
