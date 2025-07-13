@@ -23,11 +23,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install archiso and tools
+      - name: Install archiso, tools & p7zip
         run: |
           pacman -Sy --noconfirm \
             archiso squashfs-tools xorriso dosfstools \
-            curl util-linux
+            p7zip curl util-linux
 
       - name: Prepare XFCE profile
         id: prepare_profile
@@ -37,13 +37,11 @@ jobs:
           rm -rf "$PROFILE"
           cp -r /usr/share/archiso/configs/releng "$PROFILE"
 
-          # Ensure necessary directories
           mkdir -p \
             "$PROFILE/airootfs/root" \
             "$PROFILE/airootfs/etc/lightdm" \
             "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants"
 
-          # Append XFCE & utilities
           for pkg in \
             xfce4 xfce4-goodies xorg-server xorg-xinit \
             lightdm lightdm-gtk-greeter networkmanager \
@@ -52,29 +50,22 @@ jobs:
             echo "$pkg" >> "$PROFILE/packages.x86_64"
           done
 
-          # Patch ISO metadata
           sed -i \
             -e 's/^iso_name=.*/iso_name="archlinux-xfce"/' \
             -e 's/^iso_label=.*/iso_label="ARCH_XFCE"/' \
-            -e 's/^iso_publisher=.*/iso_publisher="Arch Linux XFCE Custom"/' \
-            -e 's/^iso_application=.*/iso_application="Arch Linux XFCE Live ISO"/' \
             "$PROFILE/profiledef.sh"
 
-          # Inject your custom script
           curl -fsSL \
             https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh \
             -o "$PROFILE/airootfs/root/arch.sh"
           chmod +x "$PROFILE/airootfs/root/arch.sh"
 
-          # Ensure root uses bash
           echo 'root:x:0:0:root:/root:/bin/bash' \
             > "$PROFILE/airootfs/etc/passwd"
 
-          # Auto-start XFCE for root
           echo 'exec startxfce4' \
             > "$PROFILE/airootfs/root/.xinitrc"
 
-          # Configure LightDM for root autologin
           echo '[Seat:*]' \
             > "$PROFILE/airootfs/etc/lightdm/lightdm.conf"
           echo 'autologin-user=root' \
@@ -82,16 +73,15 @@ jobs:
           echo 'autologin-session=xfce' \
             >> "$PROFILE/airootfs/etc/lightdm/lightdm.conf"
 
-          # Export profile path
           echo "profile_dir=$PROFILE" >> "$GITHUB_OUTPUT"
 
       - name: Determine build timestamp
         id: ts
         shell: bash
         run: |
-          TS="${{ github.event.inputs.build_date }}"
-          [ -z "$TS" ] && TS=$(date '+%Y%m%d_%H%M%S')
-          echo "build_timestamp=$TS" >> "$GITHUB_OUTPUT"
+          BUILD_TS="${{ github.event.inputs.build_date }}"
+          [ -z "$BUILD_TS" ] && BUILD_TS=$(date '+%Y%m%d_%H%M%S')
+          echo "build_timestamp=$BUILD_TS" >> "$GITHUB_OUTPUT"
 
       - name: Build the ISO
         id: build_iso
@@ -100,10 +90,7 @@ jobs:
           OUT=out
           mkarchiso -v -o "$OUT" "${{ steps.prepare_profile.outputs.profile_dir }}"
           ISO=$(find "$OUT" -maxdepth 1 -type f -name '*.iso' -print -quit)
-          if [ -z "$ISO" ]; then
-            echo "ERROR: ISO not found!" >&2
-            exit 1
-          fi
+          [ -z "$ISO" ] && { echo "ERROR: ISO not found!" >&2; exit 1; }
           echo "iso_path=$ISO" >> "$GITHUB_OUTPUT"
 
       - name: Upload ISO artifact
@@ -111,3 +98,35 @@ jobs:
         with:
           name: archlinux-xfce-iso-${{ steps.ts.outputs.build_timestamp }}
           path: ${{ steps.build_iso.outputs.iso_path }}
+
+      - name: Extract kernel version from ISO
+        id: extract_kernel_version
+        shell: bash
+        run: |
+          ISO="${{ steps.build_iso.outputs.iso_path }}"
+          mkdir iso_contents
+          7z x -oisosplit "$ISO" arch/boot/x86_64/vmlinuz > /dev/null
+          KVER=$(strings arch/boot/x86_64/vmlinuz \
+            | grep '^Linux version ' \
+            | head -1 \
+            | cut -d ' ' -f3)
+          echo "KERNEL_VERSION_ISO=$KVER" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release (Optional)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: ${{ steps.build_iso.outputs.iso_path }}
+          tag_name: "iso-${{ steps.ts.outputs.build_timestamp }}"
+          name: "Arch Linux Custom ISO ${{ steps.ts.outputs.build_timestamp }}"
+          body: |
+            Custom Arch Linux ISO built on ${{ steps.ts.outputs.build_timestamp }}
+            using the xfce-profile.
+            Includes the 'arch.sh' script in /root/arch.sh.
+            Root user's default shell set to /bin/bash.
+            Now includes 'htop' and 'iotop' packages.
+            Based on Arch Linux packages available at build time.
+            Kernel version (from ISO): ${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}
+          prerelease: false
