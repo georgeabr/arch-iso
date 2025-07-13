@@ -94,6 +94,8 @@ jobs:
           # Ensure it'll stay executable on first login shell (TTY auto-login)
           echo 'chmod +x /root/arch.sh' \
             >> "$PROFILE/airootfs/root/.bash_profile"
+          echo 'systemctl start NetworkManager.service' \
+            >> "$PROFILE/airootfs/root/.bash_profile"
 
 
           echo 'root:x:0:0:root:/root:/bin/bash' \
