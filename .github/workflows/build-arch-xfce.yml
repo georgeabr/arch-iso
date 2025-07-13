@@ -69,16 +69,19 @@ jobs:
             -e 's/^iso_name=.*/iso_name="archlinux-xfce"/' \
             -e 's/^iso_label=.*/iso_label="ARCH_XFCE"/' \
             "$PROFILE/profiledef.sh"
+            
+          # --- START OF REVISED ADDITION FOR ZSTD COMPRESSION (Simpler) ---
+          # Step 1: Change the compression algorithm from 'xz' to 'zstd'
+          # and explicitly set a faster compression level (e.g., 3).
+          # This replaces '-comp xz' with '-comp zstd -Xcompression-level 3'.
+          sed -i 's|-comp xz|-comp zstd -Xcompression-level 3|' "$PROFILE/profiledef.sh"
 
-          # --- START OF NEW ADDITIONS FOR ZSTD COMPRESSION ---
-          # Change mksquashfs compression algorithm from xz to zstd
-          # This specifically targets the '-comp xz' string and replaces it.
-          sed -i 's/-comp xz/-comp zstd/' "$PROFILE/profiledef.sh"
-          # Remove the xz-specific BCJ filter (not needed for zstd)
-          # This ensures the '-Xbcj x86' part is completely gone.
-          sed -i 's/-Xbcj x86//' "$PROFILE/profiledef.sh"
-          # --- END OF NEW ADDITIONS FOR ZSTD COMPRESSION ---
+          # Step 2: Remove the xz-specific BCJ filter.
+          # This removes the '-Xbcj x86' part which is not used by zstd.
+          sed -i 's|-Xbcj x86||' "$PROFILE/profiledef.sh"
+          # --- END OF REVISED ADDITION FOR ZSTD COMPRESSION (Simpler) ---
 
+        
           curl -fsSL \
             https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh \
             -o "$PROFILE/airootfs/root/arch.sh"
