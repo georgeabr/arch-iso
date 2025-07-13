@@ -54,6 +54,19 @@ jobs:
           ln -s /usr/lib/systemd/system/NetworkManager.service \
             "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"          
 
+          # Create nm-applet autostart file with echo
+          mkdir -p "$PROFILE/airootfs/root/.config/autostart"
+          AUTOSTART="$PROFILE/airootfs/root/.config/autostart/nm-applet.desktop"
+          echo '[Desktop Entry]'                           > "$AUTOSTART"
+          echo 'Type=Application'                         >> "$AUTOSTART"
+          echo 'Name=Network Manager Applet'              >> "$AUTOSTART"
+          echo 'Exec=nm-applet --indicator'               >> "$AUTOSTART"
+          echo 'OnlyShowIn=XFCE;'                         >> "$AUTOSTART"
+          echo 'Terminal=false'                           >> "$AUTOSTART"
+          echo 'X-GNOME-Autostart-enabled=true'           >> "$AUTOSTART"
+
+
+
           sed -i \
             -e 's/^iso_name=.*/iso_name="archlinux-xfce"/' \
             -e 's/^iso_label=.*/iso_label="ARCH_XFCE"/' \
@@ -79,8 +92,6 @@ jobs:
 
           # Enable NetworkManager applet autostart in XFCE
           mkdir -p "$PROFILE/airootfs/root/.config/autostart"
-          cp /usr/share/applications/nm-applet.desktop \
-            "$PROFILE/airootfs/root/.config/autostart/"
 
           echo "profile_dir=$PROFILE" >> "$GITHUB_OUTPUT"
 
