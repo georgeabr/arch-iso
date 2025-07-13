@@ -78,10 +78,15 @@ jobs:
               echo "Adding htop and iotop to $PACKAGES_FILE"
               echo "htop" >> "$PACKAGES_FILE"
               echo "iotop" >> "$PACKAGES_FILE"
+              echo "networkmanager" >> "$PACKAGES_FILE"
               grep -E '^(htop|iotop)$' "$PACKAGES_FILE" || echo "htop or iotop not found in $PACKAGES_FILE after append. Check file format."
           else
               echo "Warning: $PACKAGES_FILE not found. Cannot add htop or iotop."
           fi
+
+          # Enable NetworkManager service on boot
+          ln -s /usr/lib/systemd/system/NetworkManager.service \
+            "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"          
 
           # --- START OF ZSTD COMPRESSION MODIFICATIONS (Broken Down) ---
           # Step 1: Change the compression algorithm from 'xz' to 'zstd'
