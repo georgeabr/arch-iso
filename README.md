@@ -20,3 +20,10 @@ tail -f install-20250418_1431.log
 - get IP address with `ip a`
 - connect from other computer:
 `ssh root@ip-address`
+### Use `XFCE` releases for a graphical installation
+- use `startx` from the console to get to the GUI
+- use `gparted` to partition disks
+- from a console:
+```bash
+chmod +x arch.sh; ./arch.sh
+```
