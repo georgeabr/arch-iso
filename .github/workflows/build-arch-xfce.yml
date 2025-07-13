@@ -65,12 +65,19 @@ jobs:
           echo 'Terminal=false'                           >> "$AUTOSTART"
           echo 'X-GNOME-Autostart-enabled=true'           >> "$AUTOSTART"
 
-
-
           sed -i \
             -e 's/^iso_name=.*/iso_name="archlinux-xfce"/' \
             -e 's/^iso_label=.*/iso_label="ARCH_XFCE"/' \
             "$PROFILE/profiledef.sh"
+
+          # --- START OF NEW ADDITIONS FOR ZSTD COMPRESSION ---
+          # Change mksquashfs compression algorithm from xz to zstd
+          # This specifically targets the '-comp xz' string and replaces it.
+          sed -i 's/-comp xz/-comp zstd/' "$PROFILE/profiledef.sh"
+          # Remove the xz-specific BCJ filter (not needed for zstd)
+          # This ensures the '-Xbcj x86' part is completely gone.
+          sed -i 's/-Xbcj x86//' "$PROFILE/profiledef.sh"
+          # --- END OF NEW ADDITIONS FOR ZSTD COMPRESSION ---
 
           curl -fsSL \
             https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh \
