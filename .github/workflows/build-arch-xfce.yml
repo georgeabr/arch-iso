@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       build_date:
-        description: 'ISO Build Timestamp (YYYYMMDD_HHMMSS, leave empty for current time)'
+        description: 'ISO build timestamp (YYYYMMDD_HHMMSS). Leave empty for current time.'
         required: false
         type: string
 
@@ -21,102 +21,118 @@ jobs:
     timeout-minutes: 120
 
     steps:
-    - name: Checkout Repository
+    - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install archiso and dependencies
-      shell: bash
+    - name: Install archiso and tools
       run: |
         pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux
 
-    - name: Create XFCE Profile from Scratch
+    - name: Create XFCE archiso profile
       id: prepare_profile
       shell: bash
       run: |
         PROFILE_DIR="archiso_build_profile"
-        mkdir -p "$PROFILE_DIR/airootfs/root"
-        mkdir -p "$PROFILE_DIR/airootfs/etc/lightdm"
-        mkdir -p "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants"
 
-        # Package list
-        cat <<EOF > "$PROFILE_DIR/packages.x86_64"
-        base
-        linux
-        linux-firmware
-        mkinitcpio
-        mkinitcpio-archiso
-        xfce4
-        xfce4-goodies
-        xorg-server
-        xorg-xinit
-        lightdm
-        lightdm-gtk-greeter
-        networkmanager
-        firefox
-        htop
-        iotop
-        gparted
-        EOF
+        # Create directory tree
+        mkdir -p "$PROFILE_DIR/airootfs/root" \
+                 "$PROFILE_DIR/airootfs/etc/lightdm" \
+                 "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants" \
+                 "$PROFILE_DIR/airootfs/etc"
 
-        # Profile definition
-        cat <<EOF > "$PROFILE_DIR/profiledef.sh"
-        iso_name="archlinux-xfce"
-        iso_label="ARCH_XFCE"
-        iso_publisher="Arch Linux XFCE Custom"
-        iso_application="Arch Linux XFCE Live ISO"
-        install_dir="arch"
-        buildmodes=("iso")
-        bootmodes=("bios.syslinux.mbr" "uefi-x64.systemd-boot.esp")
-        arch="x86_64"
-        airootfs_image_type="squashfs"
-        file_permissions=(["/etc/shadow"]="0:0:400")
-        EOF
+        # 1) Package list
+        cat > "$PROFILE_DIR/packages.x86_64" << 'EOF'
+base
+linux
+linux-firmware
+mkinitcpio
+mkinitcpio-archiso
+xfce4
+xfce4-goodies
+xorg-server
+xorg-xinit
+lightdm
+lightdm-gtk-greeter
+networkmanager
+firefox
+htop
+iotop
+gparted
+EOF
 
-        # Custom script
+        # 2) ISO metadata
+        cat > "$PROFILE_DIR/profiledef.sh" << 'EOF'
+iso_name="archlinux-xfce"
+iso_label="ARCH_XFCE"
+iso_publisher="Arch Linux XFCE Custom"
+iso_application="Arch Linux XFCE Live ISO"
+install_dir="arch"
+buildmodes=("iso")
+bootmodes=("bios.syslinux.mbr" "uefi-x64.systemd-boot.esp")
+arch="x86_64"
+airootfs_image_type="squashfs"
+file_permissions=(["/etc/shadow"]="0:0:400")
+EOF
+
+        # 3) Pull in your custom script
         SCRIPT_URL="https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh"
         curl -sSL "$SCRIPT_URL" -o "$PROFILE_DIR/airootfs/root/arch.sh"
         chmod +x "$PROFILE_DIR/airootfs/root/arch.sh"
 
-        # Root shell override
-        cat <<EOF > "$PROFILE_DIR/airootfs/etc/passwd"
-        root:x:0:0:root:/root:/bin/bash
-        EOF
+        # 4) Ensure root’s shell is bash
+        cat > "$PROFILE_DIR/airootfs/etc/passwd" << 'EOF'
+root:x:0:0:root:/root:/bin/bash
+EOF
 
-        # Autologin + XFCE session
+        # 5) Autostart XFCE as root
         echo "exec startxfce4" > "$PROFILE_DIR/airootfs/root/.xinitrc"
-        cat <<EOF > "$PROFILE_DIR/airootfs/etc/lightdm/lightdm.conf"
-        [Seat:*]
-        autologin-user=root
-        autologin-session=xfce
-        EOF
 
-        ln -sf /usr/lib/systemd/system/lightdm.service "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
-        ln -sf /usr/lib/systemd/system/NetworkManager.service "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
+        # 6) Configure LightDM for autologin
+        cat > "$PROFILE_DIR/airootfs/etc/lightdm/lightdm.conf" << 'EOF'
+[Seat:*]
+autologin-user=root
+autologin-session=xfce
+EOF
 
-        echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
+        # 7) Enable services
+        ln -sf /usr/lib/systemd/system/lightdm.service \
+              "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
+        ln -sf /usr/lib/systemd/system/NetworkManager.service \
+              "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
 
-    - name: Define Build Metadata
+        # 8) Export the profile path
+        echo "profile_dir=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Define build metadata
       id: build_metadata
       shell: bash
       run: |
+        # Use provided timestamp or current time
         BUILD_TIMESTAMP="${{ github.event.inputs.build_date }}"
-        if [ -z "$BUILD_TIMESTAMP" ]; then
-          BUILD_TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
-        fi
-        echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> "$GITHUB_OUTPUT"
-        echo "ISO_OUTPUT_DIR=out" >> "$GITHUB_OUTPUT"
+        [ -z "$BUILD_TIMESTAMP" ] && BUILD_TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
 
-    - name: Build ISO
-      id: build_iso_step
+        echo "build_timestamp=$BUILD_TIMESTAMP" >> "$GITHUB_OUTPUT"
+        echo "iso_output_dir=out" >> "$GITHUB_OUTPUT"
+
+    - name: Build the ISO
+      id: build_iso
       shell: bash
       run: |
-        mkarchiso -v -o "${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}" "${{ steps.prepare_profile.outputs.PROFILE_DIR }}/"
-        ACTUAL_ISO_FILE=$(find "${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}" -name "*.iso" -print -quit)
-        [ -z "$ACTUAL_ISO_FILE" ] && exit 1
-        echo "ACTUAL_ISO_FILE=$ACTUAL_ISO_FILE" >> "$GITHUB_OUTPUT"
+        mkarchiso \
+          -v \
+          -o "${{ steps.build_metadata.outputs.iso_output_dir }}" \
+          "${{ steps.prepare_profile.outputs.profile_dir }}"
 
-    - name: Upload ISO Artifact
+        # Capture the generated ISO path
+        ACTUAL=$(find "${{ steps.build_metadata.outputs.iso_output_dir }}" -name '*.iso' -print -quit)
+        if [ -z "$ACTUAL" ]; then
+          echo "No ISO built!" >&2
+          exit 1
+        fi
+        echo "actual_iso_file=$ACTUAL" >> "$GITHUB_OUTPUT"
+
+    - name: Upload ISO artifact
       uses: actions/upload-artifact@v4
       with:
-        name: archlinux-xfce-iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
-        path: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
+        name: archlinux-xfce-iso-${{ steps.build_metadata.outputs.build_timestamp }}
+        path: ${{ steps.build_iso.outputs.actual_iso_file }}
