@@ -147,4 +147,5 @@ jobs:
             Based on Arch Linux packages available at build time.
             Kernel version (from Arch repo): `${{ steps.fetch_kernel.outputs.KERNEL_VERSION_REPO }}`
             Use `startx` to launch XFCE.
+            Installation is logged to a timestamped file like `install-20250418_1431.log`.
           prerelease: false
