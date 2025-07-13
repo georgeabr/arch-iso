@@ -90,6 +90,12 @@ jobs:
           echo 'autologin-session=xfce' \
             >> "$PROFILE/airootfs/etc/lightdm/lightdm.conf"
 
+          # Set console keymap & font
+          mkdir -p "$PROFILE/airootfs/etc"
+          echo "KEYMAP=uk"    > "$PROFILE/airootfs/etc/vconsole.conf"
+          echo "XKBLAYOUT=gb" >> "$PROFILE/airootfs/etc/vconsole.conf"
+          echo "FONT=ter-922b" >> "$PROFILE/airootfs/etc/vconsole.conf"
+
           # Enable NetworkManager applet autostart in XFCE
           mkdir -p "$PROFILE/airootfs/root/.config/autostart"
 
