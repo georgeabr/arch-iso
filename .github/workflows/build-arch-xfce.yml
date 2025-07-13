@@ -7,11 +7,6 @@ on:
         description: 'ISO Build Timestamp (YYYYMMDD_HHMMSS, leave empty for current time)'
         required: false
         type: string
-      profile_name:
-        description: 'Archiso profile name (default: xfce-profile)'
-        required: false
-        type: string
-        default: 'xfce-profile'
 
 permissions:
   contents: write
@@ -34,44 +29,68 @@ jobs:
       run: |
         pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux
 
-    - name: Prepare XFCE Profile and Add Customizations
+    - name: Prepare XFCE Archiso Profile
       id: prepare_profile
       shell: bash
       run: |
         PROFILE_DIR="archiso_build_profile"
-        INPUT_PROFILE_NAME="${{ github.event.inputs.profile_name }}"
-        SCRIPT_URL="https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh"
-        SCRIPT_FILENAME="arch.sh"
-        SCRIPT_DEST_PATH="$PROFILE_DIR/airootfs/root/$SCRIPT_FILENAME"
-
-        if [ -d "./$INPUT_PROFILE_NAME" ]; then
-          cp -r "./$INPUT_PROFILE_NAME" "$PROFILE_DIR"
-        elif [ -d "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" ]; then
-          cp -r "/usr/share/archiso/configs/$INPUT_PROFILE_NAME" "$PROFILE_DIR"
-        else
-          echo "Profile '$INPUT_PROFILE_NAME' not found."
-          exit 1
-        fi
-
-        mkdir -p "$(dirname "$SCRIPT_DEST_PATH")"
-        curl -sSL "$SCRIPT_URL" -o "$SCRIPT_DEST_PATH"
-        chmod +x "$SCRIPT_DEST_PATH"
-
-        PASSWD_FILE="$PROFILE_DIR/airootfs/etc/passwd"
-        sed -i 's|^root:x:0:0:root:/root:/.*$|root:x:0:0:root:/root:/bin/bash|' "$PASSWD_FILE"
-
-        PACKAGES_FILE="$PROFILE_DIR/packages.x86_64"
-        echo -e "xfce4\nxfce4-goodies\nxorg-server\nxorg-xinit\nlightdm\nlightdm-gtk-greeter\nnetworkmanager\nfirefox\nhtop\niotop\ngparted" >> "$PACKAGES_FILE"
-
+        mkdir -p "$PROFILE_DIR/airootfs/root"
+        mkdir -p "$PROFILE_DIR/airootfs/etc/lightdm"
         mkdir -p "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants"
-        ln -sf /usr/lib/systemd/system/NetworkManager.service "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
-        ln -sf /usr/lib/systemd/system/lightdm.service "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
 
+        # Create packages file
+        cat <<EOF > "$PROFILE_DIR/packages.x86_64"
+base
+linux
+linux-firmware
+mkinitcpio
+mkinitcpio-archiso
+xfce4
+xfce4-goodies
+xorg-server
+xorg-xinit
+lightdm
+lightdm-gtk-greeter
+networkmanager
+firefox
+htop
+iotop
+gparted
+EOF
+
+        # Create profiledef.sh
+        cat <<EOF > "$PROFILE_DIR/profiledef.sh"
+iso_name="archlinux-xfce"
+iso_label="ARCH_XFCE"
+iso_publisher="Arch Linux XFCE Custom"
+iso_application="Arch Linux XFCE Live ISO"
+install_dir="arch"
+buildmodes=("iso")
+bootmodes=("bios.syslinux.mbr" "uefi-x64.systemd-boot.esp")
+arch="x86_64"
+airootfs_image_type="squashfs"
+file_permissions=(["/etc/shadow"]="0:0:400")
+EOF
+
+        # Custom boot script
+        SCRIPT_URL="https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh"
+        curl -sSL "$SCRIPT_URL" -o "$PROFILE_DIR/airootfs/root/arch.sh"
+        chmod +x "$PROFILE_DIR/airootfs/root/arch.sh"
+
+        # Root shell override
+        mkdir -p "$PROFILE_DIR/airootfs/etc"
+        echo "root:x:0:0:root:/root:/bin/bash" > "$PROFILE_DIR/airootfs/etc/passwd"
+
+        # Autologin + XFCE session
         echo "exec startxfce4" > "$PROFILE_DIR/airootfs/root/.xinitrc"
+        cat <<EOF > "$PROFILE_DIR/airootfs/etc/lightdm/lightdm.conf"
+[Seat:*]
+autologin-user=root
+autologin-session=xfce
+EOF
 
-        echo "[Seat:*]" > "$PROFILE_DIR/airootfs/etc/lightdm/lightdm.conf"
-        echo "autologin-user=root" >> "$PROFILE_DIR/airootfs/etc/lightdm/lightdm.conf"
-        echo "autologin-session=xfce" >> "$PROFILE_DIR/airootfs/etc/lightdm/lightdm.conf"
+        ln -sf /usr/lib/systemd/system/lightdm.service "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
+        ln -sf /usr/lib/systemd/system/NetworkManager.service "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
 
         echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
 
@@ -79,14 +98,10 @@ jobs:
       id: build_metadata
       shell: bash
       run: |
-        BUILD_TIMESTAMP="${{ github.event.inputs.build_date || '' }}"
+        BUILD_TIMESTAMP="${{ github.event.inputs.build_date }}"
         [ -z "$BUILD_TIMESTAMP" ] && BUILD_TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
-
-        ISO_VERSION_IDENTIFIER="${GITHUB_REF_NAME:-$(echo $GITHUB_SHA | cut -c1-7)}"
         ISO_OUTPUT_DIR="out"
-
         echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> "$GITHUB_OUTPUT"
-        echo "ISO_VERSION_IDENTIFIER=$ISO_VERSION_IDENTIFIER" >> "$GITHUB_OUTPUT"
         echo "ISO_OUTPUT_DIR=$ISO_OUTPUT_DIR" >> "$GITHUB_OUTPUT"
 
     - name: Build ISO
