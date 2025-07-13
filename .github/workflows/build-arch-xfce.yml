@@ -116,6 +116,13 @@ jobs:
 
           echo "profile_dir=$PROFILE" >> "$GITHUB_OUTPUT"
 
+      - name: Verify profiledef.sh contents
+        shell: bash
+        run: |
+          echo "--- Contents of ${{ steps.prepare_profile.outputs.profile_dir }}/profiledef.sh ---"
+          cat "${{ steps.prepare_profile.outputs.profile_dir }}/profiledef.sh"
+          echo "---------------------------------------------------------"
+
       - name: Determine build timestamp
         id: ts
         shell: bash
