@@ -1,4 +1,4 @@
-name: Build Arch Linux ISO
+name: Build Arch Linux CLI ISO
 
 on:
   workflow_dispatch:
@@ -214,9 +214,9 @@ jobs:
         with:
           files: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
           tag_name: "iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
-          name: "Arch Linux Custom ISO ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
+          name: "Arch Linux CLI ISO ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
           body: |
-            Custom Arch Linux ISO built on ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
+            Arch Linux CLI/text-mode ISO built on ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
             using the `${{ github.event.inputs.profile_name }}` archiso profile.
             Includes the `arch.sh` script in `/root/arch.sh`.
             Root user's default shell set to `/bin/bash`.
