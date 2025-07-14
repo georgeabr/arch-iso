@@ -26,7 +26,8 @@ jobs:
             zlib libpng libjpeg-turbo libxcb xcb-util \
             hicolor-icon-theme libxkbcommon-x11 \
             xcb-util-image xcb-util-keysyms xcb-util-wm \
-            cmake python
+            cmake python \
+            fontconfig libx11 wayland
 
       - name: Create unprivileged builder user
         run: |
