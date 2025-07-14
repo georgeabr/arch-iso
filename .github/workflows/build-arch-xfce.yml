@@ -45,7 +45,8 @@ jobs:
           for pkg in \
             xfce4 xfce4-goodies xorg-server xorg-xinit \
             lightdm lightdm-gtk-greeter networkmanager \
-            firefox htop iotop gparted network-manager-applet
+            firefox htop iotop gparted network-manager-applet \
+            ncdu
           do
             echo "$pkg" >> "$PROFILE/packages.x86_64"
           done
