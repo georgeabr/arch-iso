@@ -22,35 +22,38 @@ jobs:
       - name: Install build dependencies
         run: |
           pacman -Sy --noconfirm --needed \
-            base-devel git rust pkgconf \
+            base-devel git rust pkgconf sudo \
             zlib libpng libjpeg-turbo libxcb xcb-util \
             mesa libdrm libxkbcommon pango harfbuzz \
             fontconfig glib2 gdk-pixbuf2 libsecret
 
+      - name: Create unprivileged builder user
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
+
       - name: Clone AUR PKGBUILD for wezterm-git
         run: |
           git clone https://aur.archlinux.org/wezterm-git.git
-          cd wezterm-git
-          # disable PGP verification if key isn’t in keyring
-          sed -i 's/^# *PGPKEYS=/PGPKEYS=/' PKGBUILD
 
       - name: Build the package with makepkg
         run: |
-          cd wezterm-git
-          # use all CPU cores for makepkg and cargo
-          export MAKEFLAGS="-j$(nproc)"
-          export CARGO_BUILD_JOBS=$(nproc)
-          makepkg --noconfirm --needed --skippgpcheck
+          sudo -u builder bash -lc "
+            cd wezterm-git
+            # use all CPU cores
+            export MAKEFLAGS=\"-j\$(nproc)\"
+            export CARGO_BUILD_JOBS=\$(nproc)
+            # disable PGP verification if needed
+            sed -i 's/^# *PGPKEYS=/PGPKEYS=/' PKGBUILD
+            makepkg --noconfirm --needed --skippgpcheck
+          "
 
       - name: Gather build metadata
         id: build_meta
         run: |
-          # human‐readable build date
           echo "build_date=$(date '+%Y-%m-%d %H:%M:%S %Z')" >> "$GITHUB_OUTPUT"
-          # architecture (e.g. x86_64)
           echo "architecture=$(uname -m)"                  >> "$GITHUB_OUTPUT"
-          # timestamp for tag (YYYYMMDD_HHMMSS)
-          echo "build_ts=$(date '+%Y%m%d_%H%M%S')"        >> "$GITHUB_OUTPUT"
+          echo "build_ts=$(date '+%Y%m%d_%H%M%S')"          >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release & Upload Package
         uses: softprops/action-gh-release@v2
