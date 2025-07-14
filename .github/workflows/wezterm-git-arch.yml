@@ -1,9 +1,7 @@
 name: Build wezterm-git Arch Package
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -42,20 +40,23 @@ jobs:
           # use all CPU cores for makepkg and cargo
           export MAKEFLAGS="-j$(nproc)"
           export CARGO_BUILD_JOBS=$(nproc)
-
           makepkg --noconfirm --needed --skippgpcheck
 
       - name: Gather build metadata
         id: build_meta
         run: |
+          # human‐readable build date
           echo "build_date=$(date '+%Y-%m-%d %H:%M:%S %Z')" >> "$GITHUB_OUTPUT"
+          # architecture (e.g. x86_64)
           echo "architecture=$(uname -m)"                  >> "$GITHUB_OUTPUT"
+          # timestamp for tag (YYYYMMDD_HHMMSS)
+          echo "build_ts=$(date '+%Y%m%d_%H%M%S')"        >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release & Upload Package
         uses: softprops/action-gh-release@v2
         with:
-          tag_name:     ${{ github.ref_name }}
-          release_name: Release ${{ github.ref_name }}
+          tag_name:     ${{ steps.build_meta.outputs.build_ts }}
+          release_name: Build ${{ steps.build_meta.outputs.build_ts }}
           body: |
             Built on:     ${{ steps.build_meta.outputs.build_date }}
             Architecture: ${{ steps.build_meta.outputs.architecture }}
