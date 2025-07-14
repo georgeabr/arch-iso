@@ -25,7 +25,10 @@ jobs:
             base-devel git rust pkgconf sudo \
             zlib libpng libjpeg-turbo libxcb xcb-util \
             mesa libdrm libxkbcommon pango harfbuzz \
-            fontconfig glib2 gdk-pixbuf2 libsecret
+            fontconfig glib2 gdk-pixbuf2 libsecret \
+            hicolor-icon-theme libxkbcommon-x11 \
+            xcb-util-image xcb-util-keysyms xcb-util-wm \
+            cmake python
 
       - name: Create unprivileged builder user
         run: |
