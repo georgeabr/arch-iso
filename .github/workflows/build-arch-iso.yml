@@ -117,6 +117,10 @@ jobs:
           echo "XKBLAYOUT=gb" >> "$PROFILE_DIR/airootfs/etc/vconsole.conf"
           echo "FONT=ter-922b" >> "$PROFILE_DIR/airootfs/etc/vconsole.conf"
 
+          # override the ISO’s base name so it becomes archlinux-cli-YYYY.MM.DD-x86_64.iso
+          sed -i 's|^iso_name=.*|iso_name="archlinux-cli"|' "$PROFILE_DIR/profiledef.sh"        
+          sed -i 's|^iso_label=.*|iso_label="ARCH_CLI_$(date +%Y%m%d)"|' "$PROFILE_DIR/profiledef.sh"
+
           echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Verify profiledef.sh contents
