@@ -120,6 +120,21 @@ jobs:
           # Enable NetworkManager applet autostart in XFCE
           mkdir -p "$PROFILE/airootfs/root/.config/autostart"
 
+          # ────────────────────────────────────────────────
+          # Create pacman hook to strip nvidia & mrvl firmware
+          mkdir -p "$PROFILE_DIR/airootfs/etc/pacman.d/hooks"
+          HOOK_FILE="$PROFILE_DIR/airootfs/etc/pacman.d/hooks/remove-unneeded-fw.hook"
+          echo '[Trigger]'                                                        >  "$HOOK_FILE"
+          echo 'Operation = Install'                                              >> "$HOOK_FILE"
+          echo 'Type = Package'                                                   >> "$HOOK_FILE"
+          echo 'Target = linux-firmware'                                          >> "$HOOK_FILE"
+          echo                                                                     >> "$HOOK_FILE"
+          echo '[Action]'                                                         >> "$HOOK_FILE"
+          echo 'Description = Remove unneeded firmware directories'               >> "$HOOK_FILE"
+          echo 'When = PostTransaction'                                           >> "$HOOK_FILE"
+          echo 'Exec = /usr/bin/rm -rf /usr/lib/firmware/nvidia /usr/lib/firmware/mrvl' >> "$HOOK_FILE"
+          # ────────────────────────────────────────────────
+      
           echo "profile_dir=$PROFILE" >> "$GITHUB_OUTPUT"
 
       - name: Verify profiledef.sh contents
@@ -179,6 +194,7 @@ jobs:
             Root user's default shell set to `/bin/bash`.
             Includes `htop`, `iotop`, `mc`, `gparted`.
             Based on Arch Linux packages available at build time.
+            `Nvidia` and `Marvell` firmware removed.
             Kernel version (from Arch repo): `${{ steps.fetch_kernel.outputs.KERNEL_VERSION_REPO }}`
             Use `startx` to launch XFCE.
             From a terminal, use `./arch.sh` to start the installation.
