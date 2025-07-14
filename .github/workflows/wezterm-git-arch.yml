@@ -22,8 +22,8 @@ jobs:
       - name: Install build dependencies
         run: |
           pacman -Sy --noconfirm --needed \
-            base-devel git rust cargo pkgconf \
-            zlib libpng libjpeg-turbo libxcb libxcb-util \
+            base-devel git rust pkgconf \
+            zlib libpng libjpeg-turbo libxcb xcb-util \
             mesa libdrm libxkbcommon pango harfbuzz \
             fontconfig glib2 gdk-pixbuf2 libsecret
 
