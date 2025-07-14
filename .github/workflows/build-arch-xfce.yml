@@ -122,8 +122,9 @@ jobs:
 
           # ────────────────────────────────────────────────
           # Create pacman hook to strip nvidia & mrvl firmware
-          mkdir -p "$PROFILE_DIR/airootfs/etc/pacman.d/hooks"
-          HOOK_FILE="$PROFILE_DIR/airootfs/etc/pacman.d/hooks/remove-unneeded-fw.hook"
+          mkdir -p "$PROFILE/airootfs/etc/pacman.d/hooks"
+          HOOK_FILE="$PROFILE/airootfs/etc/pacman.d/hooks/remove-unneeded-fw.hook"
+
           echo '[Trigger]'                                                        >  "$HOOK_FILE"
           echo 'Operation = Install'                                              >> "$HOOK_FILE"
           echo 'Type = Package'                                                   >> "$HOOK_FILE"
@@ -132,7 +133,8 @@ jobs:
           echo '[Action]'                                                         >> "$HOOK_FILE"
           echo 'Description = Remove unneeded firmware directories'               >> "$HOOK_FILE"
           echo 'When = PostTransaction'                                           >> "$HOOK_FILE"
-          echo 'Exec = /usr/bin/rm -rf /usr/lib/firmware/nvidia /usr/lib/firmware/mrvl' >> "$HOOK_FILE"
+          echo 'Exec = /usr/bin/rm -rf /usr/lib/firmware/nvidia /usr/lib/firmware/mrvl' \
+            >> "$HOOK_FILE"
           # ────────────────────────────────────────────────
       
           echo "profile_dir=$PROFILE" >> "$GITHUB_OUTPUT"
