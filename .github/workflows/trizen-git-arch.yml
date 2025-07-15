@@ -1,4 +1,5 @@
 # .github/workflows/trizen.yml
+
 name: Build trizen-git Arch Package
 
 on:
@@ -9,11 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:latest
 
-    env:
-      WORKSPACE: ${{ github.workspace }}
-
     steps:
-      - name: Checkout action repo (required for $GITHUB_WORKSPACE)
+      - name: Checkout action repo
         uses: actions/checkout@v3
 
       - name: Install base-devel, git & sudo
@@ -26,26 +24,23 @@ jobs:
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
           chmod 440 /etc/sudoers.d/builder
-          # Give builder ownership of the workspace
-          chown -R builder:builder "$WORKSPACE"
+          chown -R builder:builder "$GITHUB_WORKSPACE"
 
       - name: Clone Trizen AUR repo as builder
         run: |
-          sudo -u builder -i git clone https://aur.archlinux.org/trizen.git "$WORKSPACE/trizen"
+          sudo -E -u builder bash -lc "git clone https://aur.archlinux.org/trizen.git \"$GITHUB_WORKSPACE/trizen\""
 
       - name: Build the Arch package as builder
         id: pkg_build
         run: |
-          sudo -u builder -i bash << 'EOF'
-            cd "$WORKSPACE/trizen"
-            MAKEFLAGS="-j$(nproc)" \
-              makepkg --noconfirm --syncdeps --rmdeps --skippgpcheck -f
-          EOF
+          sudo -E -u builder bash -lc "cd \"$GITHUB_WORKSPACE/trizen\" && \
+            MAKEFLAGS=\"-j$(nproc)\" \
+            makepkg --noconfirm --syncdeps --rmdeps --skippgpcheck -f"
 
       - name: Gather built package
         run: |
-          mkdir -p "$WORKSPACE/artifacts"
-          mv "$WORKSPACE/trizen"/*.pkg.tar.zst "$WORKSPACE/artifacts/"
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          mv "$GITHUB_WORKSPACE/trizen"/*.pkg.tar.zst "$GITHUB_WORKSPACE/artifacts/"
 
       - name: Generate build metadata
         id: build_meta
@@ -54,7 +49,7 @@ jobs:
           echo "architecture=$(uname -m)"                   >>"$GITHUB_OUTPUT"
 
       - name: Publish Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || github.run_number }}
           name: trizen ${{ github.ref_name || github.run_number }}
