@@ -1,0 +1,56 @@
+# .github/workflows/trizen.yml
+
+name: Build trizen-git Arch Package
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v3
+
+      - name: Install base-devel & git
+        run: |
+          pacman -Sy --noconfirm --needed
+          pacman -S --noconfirm --needed base-devel git
+
+      - name: Clone Trizen AUR repository
+        run: git clone https://aur.archlinux.org/trizen.git
+
+      - name: Build the Arch package
+        id: pkg_build
+        env:
+          HOME: /github/home
+        run: |
+          cd trizen
+          MAKEFLAGS="-j$(nproc)" \
+            makepkg --noconfirm --syncdeps --rmdeps --skippgpcheck -f
+
+      - name: Gather built package
+        run: |
+          mkdir -p artifacts
+          mv trizen/*.pkg.tar.zst artifacts/
+
+      - name: Generate build metadata
+        id: build_meta
+        run: |
+          echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+          echo "architecture=$(uname -m)"                   >> $GITHUB_OUTPUT
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name || github.run_number }}
+          name: trizen ${{ github.ref_name || github.run_number }}
+          body: |
+            Package:      trizen-git for Arch Linux
+            Built on:     ${{ steps.build_meta.outputs.build_date }}
+            Architecture: ${{ steps.build_meta.outputs.architecture }}
+          files: artifacts/*.pkg.tar.zst
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
