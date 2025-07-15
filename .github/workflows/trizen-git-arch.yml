@@ -17,19 +17,28 @@ jobs:
       - name: Install base-devel & git
         run: |
           pacman -Sy --noconfirm --needed
-          pacman -S --noconfirm --needed base-devel git
+          pacman -S --noconfirm --needed base-devel git sudo
+
+      - name: Create non-root builder user
+        run: |
+          useradd --create-home builder
+          # Give builder ownership of the workspace
+          chown -R builder:builder /github/workspace
+          # Allow builder to use sudo without a password
+          echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
+          chmod 440 /etc/sudoers.d/builder
 
       - name: Clone Trizen AUR repository
         run: git clone https://aur.archlinux.org/trizen.git
 
-      - name: Build the Arch package
+      - name: Build the Arch package as builder
         id: pkg_build
-        env:
-          HOME: /github/home
         run: |
-          cd trizen
+          sudo -u builder -i bash << 'EOF'
+          cd /github/workspace/trizen
           MAKEFLAGS="-j$(nproc)" \
             makepkg --noconfirm --syncdeps --rmdeps --skippgpcheck -f
+          EOF
 
       - name: Gather built package
         run: |
@@ -40,7 +49,7 @@ jobs:
         id: build_meta
         run: |
           echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
-          echo "architecture=$(uname -m)"                   >> $GITHUB_OUTPUT
+          echo "architecture=$(uname -m)"                    >> $GITHUB_OUTPUT
 
       - name: Publish Release
         uses: softprops/action-gh-release@v1
