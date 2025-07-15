@@ -2,7 +2,6 @@
 
 name: Build trizen-git Arch Package
 
-# allow this workflow to create releases via GITHUB_TOKEN
 permissions:
   contents: write
 
@@ -41,7 +40,7 @@ jobs:
           sudo -E -u builder bash -lc \
             "cd \"$GITHUB_WORKSPACE/trizen\" && \
              MAKEFLAGS=\"-j$(nproc)\" \
-             makepkg --noconfirm --syncdeps --rmdeps --skippgpcheck -f"
+               makepkg --noconfirm --syncdeps --rmdeps --skippgpcheck -f"
 
       - name: Gather built package
         run: |
@@ -57,15 +56,12 @@ jobs:
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          # If you want to release on an existing tag, pass it here.
-          # Otherwise this will create a release named by the run number.
-          tag_name: ${{ github.ref_name || format('run-{0}', github.run_number) }}
-          name: trizen ${{ github.ref_name || format('run-{0}', github.run_number) }}
+          tag_name:    trizen-git
+          name:        trizen-git
           body: |
             Package:      trizen-git for Arch Linux
             Built on:     ${{ steps.build_meta.outputs.build_date }}
             Architecture: ${{ steps.build_meta.outputs.architecture }}
           files: artifacts/*.pkg.tar.zst
         env:
-          # GITHUB_TOKEN with `contents: write` permission (set above)
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
