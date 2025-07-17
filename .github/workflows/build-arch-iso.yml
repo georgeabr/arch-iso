@@ -236,7 +236,7 @@ jobs:
             using the `${{ github.event.inputs.profile_name }}` archiso profile.
             Includes the `arch.sh` script in `/root/arch.sh`.
             Root user's default shell set to `/bin/bash`.
-            Includes `htop`, `iotop`, `mc`, `gparted`, `networkmanager`, `ncdu`.
+            Includes `htop`, `iotop`, `mc`, `gparted`, `networkmanager`, `ncdu`, `trizen` for AUR.
             Based on Arch Linux packages available at build time.
             `Nvidia` and `Marvell` firmware removed.
             Kernel version (from ISO): `${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}`
