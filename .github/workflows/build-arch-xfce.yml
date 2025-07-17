@@ -195,7 +195,7 @@ jobs:
             using the `xfce-profile`.
             Includes the `arch.sh` script in `/root/arch.sh`.
             Root user's default shell set to `/bin/bash`.
-            Includes `htop`, `iotop`, `mc`, `gparted`, `ncdu`.
+            Includes `htop`, `iotop`, `mc`, `gparted`, `ncdu`, `trizen` for AUR.
             Based on Arch Linux packages available at build time.
             `Nvidia` and `Marvell` firmware removed.
             Kernel version (from Arch repo): `${{ steps.fetch_kernel.outputs.KERNEL_VERSION_REPO }}`
