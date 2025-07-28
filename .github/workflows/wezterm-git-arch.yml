@@ -28,17 +28,14 @@ jobs:
             xcb-util-image xcb-util-keysyms xcb-util-wm \
             cmake python \
             fontconfig libx11 wayland
-
       - name: Create unprivileged builder user
         run: |
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/builder
-
       - name: Clone and chown AUR PKGBUILD
         run: |
           git clone https://aur.archlinux.org/wezterm-git.git /home/builder/wezterm-git
           chown -R builder:builder /home/builder/wezterm-git
-
       - name: Build the package with makepkg
         run: |
           sudo -u builder bash -lc '
@@ -48,22 +45,12 @@ jobs:
             sed -i "s/^# *PGPKEYS=/PGPKEYS=/" PKGBUILD
             makepkg --noconfirm --needed --skippgpcheck
           '
-
-      - name: Rename built package
-        run: |
-          sudo -u builder bash -lc '
-            cd ~/wezterm-git
-            pkgfile=$(ls *.pkg.tar.zst)
-            mv "$pkgfile" wezterm-git-x86_64.pkg.tar.zst
-          '
-
       - name: Gather build metadata
         id: build_meta
         run: |
           echo "build_date=$(date '+%Y-%m-%d %H:%M:%S %Z')" >> "$GITHUB_OUTPUT"
           echo "architecture=$(uname -m)"                  >> "$GITHUB_OUTPUT"
           echo "build_ts=$(date '+%Y%m%d_%H%M%S')"          >> "$GITHUB_OUTPUT"
-
       - name: Create GitHub Release & Upload Package
         uses: softprops/action-gh-release@v2
         with:
@@ -73,6 +60,6 @@ jobs:
             Package:      wezterm-git for Arch Linux
             Built on:     ${{ steps.build_meta.outputs.build_date }}
             Architecture: ${{ steps.build_meta.outputs.architecture }}
-          files: /home/builder/wezterm-git/wezterm-git-x86_64.pkg.tar.zst
+          files: /home/builder/wezterm-git/*.pkg.tar.zst
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
