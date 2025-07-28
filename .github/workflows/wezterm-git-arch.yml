@@ -49,6 +49,14 @@ jobs:
             makepkg --noconfirm --needed --skippgpcheck
           '
 
+      - name: Rename built package
+        run: |
+          sudo -u builder bash -lc '
+            cd ~/wezterm-git
+            pkgfile=$(ls *.pkg.tar.zst)
+            mv "$pkgfile" wezterm-git-x86_64.pkg.tar.zst
+          '
+
       - name: Gather build metadata
         id: build_meta
         run: |
@@ -65,6 +73,6 @@ jobs:
             Package:      wezterm-git for Arch Linux
             Built on:     ${{ steps.build_meta.outputs.build_date }}
             Architecture: ${{ steps.build_meta.outputs.architecture }}
-          files: /home/builder/wezterm-git/*.pkg.tar.zst
+          files: /home/builder/wezterm-git/wezterm-git-x86_64.pkg.tar.zst
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
