@@ -36,6 +36,15 @@ jobs:
         run: |
           git clone https://aur.archlinux.org/wezterm-git.git /home/builder/wezterm-git
           chown -R builder:builder /home/builder/wezterm-git
+      
+      - name: Strip font dependencies
+        run: |
+          sudo -u builder bash -lc '
+            cd ~/wezterm-git
+            sed -i "/ttf-jetbrains-mono/d" PKGBUILD
+            sed -i "/ttf-roboto/d" PKGBUILD
+          '
+
       - name: Build the package with makepkg
         run: |
           sudo -u builder bash -lc '
