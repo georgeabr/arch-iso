@@ -41,15 +41,14 @@ jobs:
 
       - name: Generate PKGBUILD dynamically
         run: |
-          sudo -u builder bash -lc '
-            cd ~/wezterm-git
+          cd /home/builder/wezterm-git
 
-            pkgver=$(git rev-parse --short HEAD)
-            pkgdate=$(date +%Y%m%d)
+          pkgver=$(git rev-parse --short HEAD)
+          pkgdate=$(date +%Y%m%d)
 
-cat > PKGBUILD <<EOF
+          sudo -u builder tee PKGBUILD > /dev/null << 'EOF'
 pkgname=wezterm-git
-pkgver=${pkgdate}.${pkgver}
+pkgver=0
 pkgrel=1
 pkgdesc="GPU-accelerated terminal emulator and multiplexer"
 arch=(x86_64)
@@ -76,26 +75,27 @@ source=("git+https://github.com/wez/wezterm.git")
 sha256sums=("SKIP")
 
 pkgver() {
-  cd "\${srcdir}/wezterm"
+  cd "${srcdir}/wezterm"
   printf "%s.%s" "$(date +%Y%m%d)" "$(git rev-parse --short HEAD)"
 }
 
 build() {
-  cd "\${srcdir}/wezterm"
+  cd "${srcdir}/wezterm"
   cargo build --release
 }
 
 package() {
-  cd "\${srcdir}/wezterm"
-  install -Dm755 target/release/wezterm "\${pkgdir}/usr/bin/wezterm"
-  install -Dm755 target/release/wezterm-mux-server "\${pkgdir}/usr/bin/wezterm-mux-server"
-  install -Dm644 LICENSE "\${pkgdir}/usr/share/licenses/\${pkgname}/LICENSE"
+  cd "${srcdir}/wezterm"
+  install -Dm755 target/release/wezterm "${pkgdir}/usr/bin/wezterm"
+  install -Dm755 target/release/wezterm-mux-server "${pkgdir}/usr/bin/wezterm-mux-server"
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }
 EOF
-          '
 
       - name: Build the package with makepkg
         run: |
+          cd /home/builder/wezterm-git
+          chown builder:builder PKGBUILD
           sudo -u builder bash -lc '
             cd ~/wezterm-git
             export MAKEFLAGS="-j$(nproc)"
