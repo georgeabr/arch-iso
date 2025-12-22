@@ -39,14 +39,14 @@ jobs:
           git clone https://github.com/wez/wezterm.git /home/builder/wezterm-git
           chown -R builder:builder /home/builder/wezterm-git
 
-      - name: Generate PKGBUILD dynamically
-        run: |
-          cd /home/builder/wezterm-git
+- name: Generate PKGBUILD dynamically
+  run: |
+    cd /home/builder/wezterm-git
 
-          pkgver=$(git rev-parse --short HEAD)
-          pkgdate=$(date +%Y%m%d)
+    pkgver=$(git rev-parse --short HEAD)
+    pkgdate=$(date +%Y%m%d)
 
-          sudo -u builder tee PKGBUILD > /dev/null << 'EOF'
+    cat > PKGBUILD << 'EOF'
 pkgname=wezterm-git
 pkgver=0
 pkgrel=1
