@@ -47,51 +47,51 @@ jobs:
             pkgver=$(git rev-parse --short HEAD)
             pkgdate=$(date +%Y%m%d)
 
-            cat > PKGBUILD <<EOF
-            pkgname=wezterm-git
-            pkgver=${pkgdate}.${pkgver}
-            pkgrel=1
-            pkgdesc="GPU-accelerated terminal emulator and multiplexer"
-            arch=(x86_64)
-            url="https://github.com/wez/wezterm"
-            license=(MIT)
-            depends=(
-              fontconfig
-              libx11
-              libxcb
-              libxkbcommon
-              wayland
-              zlib
-              libpng
-              libjpeg-turbo
-            )
-            makedepends=(
-              git
-              rust
-              cargo
-              cmake
-              python
-            )
-            source=("git+https://github.com/wez/wezterm.git")
-            sha256sums=("SKIP")
+cat > PKGBUILD <<EOF
+pkgname=wezterm-git
+pkgver=${pkgdate}.${pkgver}
+pkgrel=1
+pkgdesc="GPU-accelerated terminal emulator and multiplexer"
+arch=(x86_64)
+url="https://github.com/wez/wezterm"
+license=(MIT)
+depends=(
+  fontconfig
+  libx11
+  libxcb
+  libxkbcommon
+  wayland
+  zlib
+  libpng
+  libjpeg-turbo
+)
+makedepends=(
+  git
+  rust
+  cargo
+  cmake
+  python
+)
+source=("git+https://github.com/wez/wezterm.git")
+sha256sums=("SKIP")
 
-            pkgver() {
-              cd "\${srcdir}/wezterm"
-              printf "%s.%s" "$(date +%Y%m%d)" "$(git rev-parse --short HEAD)"
-            }
+pkgver() {
+  cd "\${srcdir}/wezterm"
+  printf "%s.%s" "$(date +%Y%m%d)" "$(git rev-parse --short HEAD)"
+}
 
-            build() {
-              cd "\${srcdir}/wezterm"
-              cargo build --release
-            }
+build() {
+  cd "\${srcdir}/wezterm"
+  cargo build --release
+}
 
-            package() {
-              cd "\${srcdir}/wezterm"
-              install -Dm755 target/release/wezterm "\${pkgdir}/usr/bin/wezterm"
-              install -Dm755 target/release/wezterm-mux-server "\${pkgdir}/usr/bin/wezterm-mux-server"
-              install -Dm644 LICENSE "\${pkgdir}/usr/share/licenses/\${pkgname}/LICENSE"
-            }
-            EOF
+package() {
+  cd "\${srcdir}/wezterm"
+  install -Dm755 target/release/wezterm "\${pkgdir}/usr/bin/wezterm"
+  install -Dm755 target/release/wezterm-mux-server "\${pkgdir}/usr/bin/wezterm-mux-server"
+  install -Dm644 LICENSE "\${pkgdir}/usr/share/licenses/\${pkgname}/LICENSE"
+}
+EOF
           '
 
       - name: Build the package with makepkg
