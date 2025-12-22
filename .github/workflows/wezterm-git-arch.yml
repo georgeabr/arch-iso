@@ -28,21 +28,70 @@ jobs:
             xcb-util-image xcb-util-keysyms xcb-util-wm \
             cmake python \
             fontconfig libx11 wayland
+
       - name: Create unprivileged builder user
         run: |
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/builder
-      - name: Clone and chown AUR PKGBUILD
+
+      - name: Clone wezterm upstream repo
         run: |
-          git clone https://aur.archlinux.org/wezterm-git.git /home/builder/wezterm-git
+          git clone https://github.com/wez/wezterm.git /home/builder/wezterm-git
           chown -R builder:builder /home/builder/wezterm-git
-      
-      - name: Strip font dependencies
+
+      - name: Generate PKGBUILD dynamically
         run: |
           sudo -u builder bash -lc '
             cd ~/wezterm-git
-            sed -i "/ttf-jetbrains-mono/d" PKGBUILD
-            sed -i "/ttf-roboto/d" PKGBUILD
+
+            pkgver=$(git rev-parse --short HEAD)
+            pkgdate=$(date +%Y%m%d)
+
+            cat > PKGBUILD <<EOF
+pkgname=wezterm-git
+pkgver=${pkgdate}.${pkgver}
+pkgrel=1
+pkgdesc="GPU-accelerated terminal emulator and multiplexer"
+arch=(x86_64)
+url="https://github.com/wez/wezterm"
+license=(MIT)
+depends=(
+  fontconfig
+  libx11
+  libxcb
+  libxkbcommon
+  wayland
+  zlib
+  libpng
+  libjpeg-turbo
+)
+makedepends=(
+  git
+  rust
+  cargo
+  cmake
+  python
+)
+source=("git+https://github.com/wez/wezterm.git")
+sha256sums=("SKIP")
+
+pkgver() {
+  cd "\${srcdir}/wezterm"
+  printf "%s.%s" "$(date +%Y%m%d)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cd "\${srcdir}/wezterm"
+  cargo build --release
+}
+
+package() {
+  cd "\${srcdir}/wezterm"
+  install -Dm755 target/release/wezterm "\${pkgdir}/usr/bin/wezterm"
+  install -Dm755 target/release/wezterm-mux-server "\${pkgdir}/usr/bin/wezterm-mux-server"
+  install -Dm644 LICENSE "\${pkgdir}/usr/share/licenses/\${pkgname}/LICENSE"
+}
+EOF
           '
 
       - name: Build the package with makepkg
@@ -51,20 +100,24 @@ jobs:
             cd ~/wezterm-git
             export MAKEFLAGS="-j$(nproc)"
             export CARGO_BUILD_JOBS=$(nproc)
-            sed -i "s/^# *PGPKEYS=/PGPKEYS=/" PKGBUILD
             makepkg --noconfirm --needed --skippgpcheck
           '
+
       - name: Gather build metadata
         id: build_meta
         run: |
+          cd /home/builder/wezterm-git
+          short_sha=$(git rev-parse --short HEAD)
+          date_tag=$(date '+%Y-%m-%d')
+          echo "build_tag=${date_tag}-${short_sha}" >> "$GITHUB_OUTPUT"
           echo "build_date=$(date '+%Y-%m-%d %H:%M:%S %Z')" >> "$GITHUB_OUTPUT"
-          echo "architecture=$(uname -m)"                  >> "$GITHUB_OUTPUT"
-          echo "build_ts=$(date '+%Y%m%d_%H%M%S')"          >> "$GITHUB_OUTPUT"
+          echo "architecture=$(uname -m)" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release & Upload Package
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.build_meta.outputs.build_ts }}
-          name:     wezterm-git ${{ steps.build_meta.outputs.build_ts }}
+          tag_name: ${{ steps.build_meta.outputs.build_tag }}
+          name:     wezterm-git ${{ steps.build_meta.outputs.build_tag }}
           body: |
             Package:      wezterm-git for Arch Linux
             Built on:     ${{ steps.build_meta.outputs.build_date }}
