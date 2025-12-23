@@ -35,46 +35,46 @@ jobs:
           rm -rf "$PROFILE_DIR"
           cp -r /usr/share/archiso/configs/releng "$PROFILE_DIR"
 
-          # Create directories
+          # Create directory structure
           mkdir -p "$PROFILE_DIR/airootfs/root/.config/autostart"
           mkdir -p "$PROFILE_DIR/airootfs/etc/lightdm"
+          mkdir -p "$PROFILE_DIR/airootfs/etc/pam.d"
           mkdir -p "$PROFILE_DIR/airootfs/etc/systemd/system/getty@tty1.service.d"
 
-          # 1. Packages
+          # 1. Essential Packages
           for pkg in xfce4 xfce4-goodies xorg-server lightdm lightdm-gtk-greeter polkit polkit-gnome networkmanager network-manager-applet firefox htop gparted ncdu dbus; do
             echo "$pkg" >> "$PROFILE_DIR/packages.x86_64"
           done
 
-          # 2. Fix polkitd and root accounts
+          # 2. Fix Accounts (polkitd user + root blank password)
           printf "root::0:0:root:/root:/bin/bash\npolkitd:x:102:102:PolicyKit daemon:/var/lib/polkit-1:/usr/bin/nologin\n" > "$PROFILE_DIR/airootfs/etc/passwd"
-          printf "root:x:0:root\npolkitd:x:102:\nautologin:x:96:root\n" > "$PROFILE_DIR/airootfs/etc/group"
+          printf "root:x:0:root\nvideo:x:985:root\nrender:x:989:root\npolkitd:x:102:\nautologin:x:96:root\n" > "$PROFILE_DIR/airootfs/etc/group"
 
-          # 3. Disable TTY1 autologin conflict
+          # 3. LightDM Configuration (ALLOW ROOT LOGIN)
+          printf "[Seat:*]\nallow-root=true\ngreeter-session=lightdm-gtk-greeter\nautologin-user=root\nautologin-session=xfce\nuser-session=xfce\nautologin-user-timeout=0\n" > "$PROFILE_DIR/airootfs/etc/lightdm/lightdm.conf"
+
+          # 4. PAM Fix (Allow NULL passwords for the GUI)
+          printf "auth_required pam_unix.so nullok\nauth_required pam_env.so\naccount_required pam_unix.so\npassword_required pam_unix.so\nsession_required pam_unix.so\n" > "$PROFILE_DIR/airootfs/etc/pam.d/lightdm-autologin"
+          printf "auth_required pam_unix.so nullok\naccount_required pam_unix.so\nsession_required pam_unix.so\n" > "$PROFILE_DIR/airootfs/etc/pam.d/lightdm-greeter"
+
+          # 5. Disable TTY1 autologin to prevent session hijack
           printf "[Service]\nExecStart=\nExecStart=-/usr/bin/agetty --noclear %%I \$TERM\n" > "$PROFILE_DIR/airootfs/etc/systemd/system/getty@tty1.service.d/autologin.conf"
 
-          # 4. LightDM Autologin Config
-          printf "[Seat:*]\ngreeter-session=lightdm-gtk-greeter\nautologin-user=root\nautologin-session=xfce\nuser-session=xfce\nautologin-user-timeout=0\n" > "$PROFILE_DIR/airootfs/etc/lightdm/lightdm.conf"
-
-          # 5. Enable Services
+          # 6. Enable Services
           ln -sf /usr/lib/systemd/system/lightdm.service "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
           ln -sf /usr/lib/systemd/system/NetworkManager.service "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
 
-          # 6. --- START OF ZSTD COMPRESSION MODIFICATIONS ---
-          # Step 1: Change xz to zstd and set compression level 5
+          # 7. --- START OF ZSTD COMPRESSION MODIFICATIONS (Your Request) ---
           sed -i "s|'-comp' 'xz'|'-comp' 'zstd' '-Xcompression-level' '5'|" "$PROFILE_DIR/profiledef.sh"
-
-          # Step 2: Remove the xz-specific BCJ filter
           sed -i "s|'-Xbcj' 'x86'||" "$PROFILE_DIR/profiledef.sh"
-
-          # Step 3: Remove the xz-specific dictionary size option
           sed -i "s|'-Xdict-size' '1M'||" "$PROFILE_DIR/profiledef.sh"
           # --- END OF ZSTD COMPRESSION MODIFICATIONS ---
 
-          # 7. Branding & ISO Metadata
+          # 8. Branding & Metadata
           sed -i 's|^iso_name=.*|iso_name="auto-arch-xfce"|' "$PROFILE_DIR/profiledef.sh"
           sed -i 's|^iso_label=.*|iso_label="AUTO_ARCH_XFCE"|' "$PROFILE_DIR/profiledef.sh"
           
-          # 8. Installer, Keymap, and Firmware Hook
+          # 9. Installer, Keymap, and Firmware Hook
           curl -fsSL https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh -o "$PROFILE_DIR/airootfs/root/arch.sh"
           chmod +x "$PROFILE_DIR/airootfs/root/arch.sh"
           
@@ -101,11 +101,11 @@ jobs:
           tag_name: "iso-${{ github.run_id }}"
           name: "Auto Arch with XFCE"
           body: |
-            ### Build Information
-            - **Branding**: Auto Arch with XFCE.
-            - **Compression**: ZSTD Level 5.
-            - **Login**: Automatic root login to desktop.
-            - **Installer**: Run `/root/arch.sh` in terminal.
+            ### Auto Arch Build Details
+            - **GUI**: XFCE4 (Automatic root login enabled).
+            - **Compression**: ZSTD Level 5 (Fast build).
+            - **Installer**: `/root/arch.sh` included.
+            - **Keyboard**: UK Layout.
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
