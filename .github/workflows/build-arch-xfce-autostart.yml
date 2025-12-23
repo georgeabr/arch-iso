@@ -43,56 +43,53 @@ jobs:
             "$PROFILE/airootfs/etc/systemd/system/display-manager.service" \
             "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants"
 
-          # Add packages to ISO
+          # Add packages to ISO (Added polkit-gnome for authorization)
           for pkg in \
             xfce4 xfce4-goodies xorg-server xorg-xinit \
-            lightdm lightdm-gtk-greeter networkmanager \
+            lightdm lightdm-gtk-greeter polkit-gnome networkmanager \
             firefox htop iotop gparted network-manager-applet \
             ncdu
           do
             echo "$pkg" >> "$PROFILE/packages.x86_64"
           done
 
-          # 1. Enable Services (NM and LightDM for Autostart)
+          # 1. Enable Services
           ln -s /usr/lib/systemd/system/NetworkManager.service \
             "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
           ln -s /usr/lib/systemd/system/lightdm.service \
             "$PROFILE/airootfs/etc/systemd/system/display-manager.service"
 
-          # 2. Configure LightDM Autologin for Root
+          # 2. Configure LightDM (Fixed Greeter & Autologin)
           {
             echo '[Seat:*]'
+            echo 'greeter-session=lightdm-gtk-greeter'
             echo 'autologin-user=root'
             echo 'autologin-session=xfce'
             echo 'user-session=xfce'
+            echo 'autologin-user-timeout=0'
           } > "$PROFILE/airootfs/etc/lightdm/lightdm.conf"
 
-          # 3. Security group for autologin
+          # 3. Fix Authorization (Polkit Agent Autostart)
+          mkdir -p "$PROFILE/airootfs/root/.config/autostart"
+          echo -e "[Desktop Entry]\nType=Application\nName=Polkit\nExec=/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1\nOnlyShowIn=XFCE;" > "$PROFILE/airootfs/root/.config/autostart/polkit-gnome.desktop"
+
+          # 4. Security group for autologin (Mandatory)
           echo 'autologin:x:96:root' >> "$PROFILE/airootfs/etc/group"
 
-          # 4. Desktop Autostart Items
-          mkdir -p "$PROFILE/airootfs/root/.config/autostart"
-          echo -e "[Desktop Entry]\nType=Application\nName=Network Manager Applet\nExec=nm-applet --indicator\nOnlyShowIn=XFCE;\nTerminal=false\nX-GNOME-Autostart-enabled=true" > "$PROFILE/airootfs/root/.config/autostart/nm-applet.desktop"
-
-          # 5. Set ISO Name (archiso appends the date automatically) and ZSTD Compression
+          # 5. Set ISO Name and ZSTD
           sed -i -e 's|^iso_name=.*|iso_name="archlinux-xfce-auto"|' -e 's|^iso_label=.*|iso_label="ARCH_XFCE_AUTO"|' "$PROFILE/profiledef.sh"
           sed -i "s|'-comp' 'xz'|'-comp' 'zstd' '-Xcompression-level' '5'|" "$PROFILE/profiledef.sh"
           sed -i "s|'-Xbcj' 'x86'||" "$PROFILE/profiledef.sh"
           sed -i "s|'-Xdict-size' '1M'||" "$PROFILE/profiledef.sh"
         
-          # 6. Include install script
+          # 6. Include install script & configs
           curl -fsSL https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh -o "$PROFILE/airootfs/root/arch.sh"
           chmod +x "$PROFILE/airootfs/root/arch.sh"
-
-          # 7. Environment & Keymap
           echo 'root:x:0:0:root:/root:/bin/bash' > "$PROFILE/airootfs/etc/passwd"
+          
+          # Keyboard layout
           echo "KEYMAP=uk" > "$PROFILE/airootfs/etc/vconsole.conf"
           echo "XKBLAYOUT=gb" >> "$PROFILE/airootfs/etc/vconsole.conf"
-          echo "FONT=ter-922b" >> "$PROFILE/airootfs/etc/vconsole.conf"
-
-          # 8. Pacman hook to strip unneeded firmware
-          mkdir -p "$PROFILE/airootfs/etc/pacman.d/hooks"
-          echo -e "[Trigger]\nOperation = Install\nType = Package\nTarget = linux-firmware\n\n[Action]\nDescription = Remove firmware\nWhen = PostTransaction\nExec = /usr/bin/rm -rf /usr/lib/firmware/nvidia /usr/lib/firmware/mrvl" > "$PROFILE/airootfs/etc/pacman.d/hooks/remove-unneeded-fw.hook"
 
           echo "profile_dir=$PROFILE" >> "$GITHUB_OUTPUT"
 
