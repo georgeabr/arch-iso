@@ -35,36 +35,35 @@ jobs:
           
           cd /home/builder/wezterm-git
           
-          # ONLY MODIFY THE VERSION: Overwrite the pkgver() function
-          # This ensures it generates a proper version string from the git source
-          sed -i '/pkgver() {/,/}/c\pkgver() {\n  cd "$srcdir/wezterm"\n  ( set -o pipefail; git describe --long --tags 2>/dev/null | sed "s/\\([^-]*-\\)g/r\\1/;s/-/./g" || printf "0.r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)" )\n}' PKGBUILD
+          # This replaces the pkgver() function to produce: YYYYMMDD.HHMMSS.HASH
+          sed -i '/pkgver() {/,/}/c\pkgver() {\n  cd "$srcdir/wezterm"\n  printf "%s.%s.%s" "$(date +%Y%m%d)" "$(date +%H%M%S)" "$(git rev-parse --short HEAD)"\n}' PKGBUILD
 
       - name: Build the package with makepkg
         run: |
           sudo -u builder bash -lc '
             cd ~/wezterm-git
             export MAKEFLAGS="-j$(nproc)"
-            # -s will install all original AUR dependencies including fonts
+            # This installs all original AUR deps (fonts, etc)
             makepkg --noconfirm --needed --skippgpcheck -s
           '
 
-      - name: Gather build metadata
+      - name: Gather metadata
         id: build_meta
         run: |
           cd /home/builder/wezterm-git
           pkg_file=$(ls *.pkg.tar.zst | head -n 1)
-          # Extract the actual version string from the generated package file
+          # Get the full version string from the file name
           pkg_ver=$(echo "$pkg_file" | sed 's/-x86_64.pkg.tar.zst//')
           echo "pkg_ver=$pkg_ver" >> "$GITHUB_OUTPUT"
           echo "ts=$(date '+%Y%m%d_%H%M%S')" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release & Upload Package
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.build_meta.outputs.ts }}
           name: ${{ steps.build_meta.outputs.pkg_ver }}
           body: |
-            AUR-based build of wezterm-git.
+            Build: wezterm-git
             Version: ${{ steps.build_meta.outputs.pkg_ver }}
           files: /home/builder/wezterm-git/*.pkg.tar.zst
         env:
