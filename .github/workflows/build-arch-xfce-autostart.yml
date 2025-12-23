@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       build_date:
-        description: 'ISO build timestamp'
+        description: 'ISO build timestamp (YYYYMMDD_HHMMSS). Leave empty for current time.'
         required: false
         type: string
 
@@ -31,55 +31,69 @@ jobs:
         id: prepare_profile
         shell: bash
         run: |
-          PROFILE=xfce-profile
-          rm -rf "$PROFILE"
-          cp -r /usr/share/archiso/configs/releng "$PROFILE"
+          PROFILE_DIR="xfce-profile"
+          rm -rf "$PROFILE_DIR"
+          cp -r /usr/share/archiso/configs/releng "$PROFILE_DIR"
 
-          mkdir -p "$PROFILE/airootfs/root/.config/autostart"
-          mkdir -p "$PROFILE/airootfs/etc/lightdm"
-          mkdir -p "$PROFILE/airootfs/etc/systemd/system/getty@tty1.service.d"
+          # Create directories
+          mkdir -p "$PROFILE_DIR/airootfs/root/.config/autostart"
+          mkdir -p "$PROFILE_DIR/airootfs/etc/lightdm"
+          mkdir -p "$PROFILE_DIR/airootfs/etc/systemd/system/getty@tty1.service.d"
 
           # 1. Packages
           for pkg in xfce4 xfce4-goodies xorg-server lightdm lightdm-gtk-greeter polkit polkit-gnome networkmanager network-manager-applet firefox htop gparted ncdu dbus; do
-            echo "$pkg" >> "$PROFILE/packages.x86_64"
+            echo "$pkg" >> "$PROFILE_DIR/packages.x86_64"
           done
 
-          # 2. Fix polkitd and root accounts (Prevents Auth Manager and Loop errors)
-          printf "root::0:0:root:/root:/bin/bash\npolkitd:x:102:102:PolicyKit daemon:/var/lib/polkit-1:/usr/bin/nologin\n" > "$PROFILE/airootfs/etc/passwd"
-          printf "root:x:0:root\npolkitd:x:102:\nautologin:x:96:root\n" > "$PROFILE/airootfs/etc/group"
+          # 2. Fix polkitd and root accounts
+          printf "root::0:0:root:/root:/bin/bash\npolkitd:x:102:102:PolicyKit daemon:/var/lib/polkit-1:/usr/bin/nologin\n" > "$PROFILE_DIR/airootfs/etc/passwd"
+          printf "root:x:0:root\npolkitd:x:102:\nautologin:x:96:root\n" > "$PROFILE_DIR/airootfs/etc/group"
 
           # 3. Disable TTY1 autologin conflict
-          printf "[Service]\nExecStart=\nExecStart=-/usr/bin/agetty --noclear %%I \$TERM\n" > "$PROFILE/airootfs/etc/systemd/system/getty@tty1.service.d/autologin.conf"
+          printf "[Service]\nExecStart=\nExecStart=-/usr/bin/agetty --noclear %%I \$TERM\n" > "$PROFILE_DIR/airootfs/etc/systemd/system/getty@tty1.service.d/autologin.conf"
 
           # 4. LightDM Autologin Config
-          printf "[Seat:*]\ngreeter-session=lightdm-gtk-greeter\nautologin-user=root\nautologin-session=xfce\nuser-session=xfce\nautologin-user-timeout=0\n" > "$PROFILE/airootfs/etc/lightdm/lightdm.conf"
+          printf "[Seat:*]\ngreeter-session=lightdm-gtk-greeter\nautologin-user=root\nautologin-session=xfce\nuser-session=xfce\nautologin-user-timeout=0\n" > "$PROFILE_DIR/airootfs/etc/lightdm/lightdm.conf"
 
           # 5. Enable Services
-          ln -sf /usr/lib/systemd/system/lightdm.service "$PROFILE/airootfs/etc/systemd/system/display-manager.service"
-          ln -sf /usr/lib/systemd/system/NetworkManager.service "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
+          ln -sf /usr/lib/systemd/system/lightdm.service "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
+          ln -sf /usr/lib/systemd/system/NetworkManager.service "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
 
-          # 6. Polkit & Network Applet Autostart
-          printf "[Desktop Entry]\nType=Application\nName=Polkit\nExec=/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1\nOnlyShowIn=XFCE;\n" > "$PROFILE/airootfs/root/.config/autostart/polkit-gnome.desktop"
-          printf "[Desktop Entry]\nType=Application\nName=Network\nExec=nm-applet\nOnlyShowIn=XFCE;\n" > "$PROFILE/airootfs/root/.config/autostart/nm-applet.desktop"
+          # 6. --- START OF ZSTD COMPRESSION MODIFICATIONS ---
+          # Step 1: Change xz to zstd and set compression level 5
+          sed -i "s|'-comp' 'xz'|'-comp' 'zstd' '-Xcompression-level' '5'|" "$PROFILE_DIR/profiledef.sh"
 
-          # 7. Metadata (Leaving Compression untouched)
-          sed -i 's|^iso_name=.*|iso_name="auto-arch-xfce"|' "$PROFILE/profiledef.sh"
-          sed -i 's|^iso_label=.*|iso_label="AUTO_ARCH_XFCE"|' "$PROFILE/profiledef.sh"
-        
-          # 8. Installer and Keymap
-          curl -fsSL https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh -o "$PROFILE/airootfs/root/arch.sh"
-          chmod +x "$PROFILE/airootfs/root/arch.sh"
-          printf "KEYMAP=uk\nXKBLAYOUT=gb\n" > "$PROFILE/airootfs/etc/vconsole.conf"
+          # Step 2: Remove the xz-specific BCJ filter
+          sed -i "s|'-Xbcj' 'x86'||" "$PROFILE_DIR/profiledef.sh"
 
-          echo "profile_dir=$PROFILE" >> "$GITHUB_OUTPUT"
+          # Step 3: Remove the xz-specific dictionary size option
+          sed -i "s|'-Xdict-size' '1M'||" "$PROFILE_DIR/profiledef.sh"
+          # --- END OF ZSTD COMPRESSION MODIFICATIONS ---
+
+          # 7. Branding & ISO Metadata
+          sed -i 's|^iso_name=.*|iso_name="auto-arch-xfce"|' "$PROFILE_DIR/profiledef.sh"
+          sed -i 's|^iso_label=.*|iso_label="AUTO_ARCH_XFCE"|' "$PROFILE_DIR/profiledef.sh"
+          
+          # 8. Installer, Keymap, and Firmware Hook
+          curl -fsSL https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh -o "$PROFILE_DIR/airootfs/root/arch.sh"
+          chmod +x "$PROFILE_DIR/airootfs/root/arch.sh"
+          
+          mkdir -p "$PROFILE_DIR/airootfs/etc"
+          printf "KEYMAP=uk\nXKBLAYOUT=gb\nFONT=ter-922b\n" > "$PROFILE_DIR/airootfs/etc/vconsole.conf"
+
+          mkdir -p "$PROFILE_DIR/airootfs/etc/pacman.d/hooks"
+          printf "[Trigger]\nOperation = Install\nType = Package\nTarget = linux-firmware\n\n[Action]\nDescription = Remove firmware\nWhen = PostTransaction\nExec = /usr/bin/rm -rf /usr/lib/firmware/nvidia /usr/lib/firmware/mrvl\n" > "$PROFILE_DIR/airootfs/etc/pacman.d/hooks/remove-unneeded-fw.hook"
+
+          echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Build ISO
         id: build_iso
         run: |
-          mkarchiso -v -o out "${{ steps.prepare_profile.outputs.profile_dir }}"
-          echo "iso_path=$(find out -name '*.iso' -print -quit)" >> "$GITHUB_OUTPUT"
+          OUT="out"
+          mkarchiso -v -o "$OUT" ${{ steps.prepare_profile.outputs.PROFILE_DIR }}/
+          echo "iso_path=$(find "$OUT" -name "*.iso" -print -quit)" >> "$GITHUB_OUTPUT"
 
-      - name: Create Release
+      - name: Create GitHub Release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
@@ -87,10 +101,11 @@ jobs:
           tag_name: "iso-${{ github.run_id }}"
           name: "Auto Arch with XFCE"
           body: |
-            ### Auto Arch Build
-            - **Environment**: XFCE Desktop autostart enabled.
-            - **Installer**: `/root/arch.sh` is ready.
-            - **Keyboard**: UK Layout.
+            ### Build Information
+            - **Branding**: Auto Arch with XFCE.
+            - **Compression**: ZSTD Level 5.
+            - **Login**: Automatic root login to desktop.
+            - **Installer**: Run `/root/arch.sh` in terminal.
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
