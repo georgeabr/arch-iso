@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       build_date:
-        description: 'ISO build timestamp (YYYYMMDD_HHMMSS). Leave empty for current time.'
+        description: 'ISO build timestamp'
         required: false
         type: string
 
@@ -35,77 +35,63 @@ jobs:
           rm -rf "$PROFILE_DIR"
           cp -r /usr/share/archiso/configs/releng "$PROFILE_DIR"
 
-          # Create directory structure
-          mkdir -p "$PROFILE_DIR/airootfs/root/.config/autostart"
-          mkdir -p "$PROFILE_DIR/airootfs/etc/lightdm"
-          mkdir -p "$PROFILE_DIR/airootfs/etc/pam.d"
-          mkdir -p "$PROFILE_DIR/airootfs/etc/systemd/system/getty@tty1.service.d"
-
           # 1. Essential Packages
           for pkg in xfce4 xfce4-goodies xorg-server lightdm lightdm-gtk-greeter polkit polkit-gnome networkmanager network-manager-applet firefox htop gparted ncdu dbus; do
             echo "$pkg" >> "$PROFILE_DIR/packages.x86_64"
           done
 
-          # 2. Fix Accounts (polkitd user + root blank password)
+          # 2. Account Setup
           printf "root::0:0:root:/root:/bin/bash\npolkitd:x:102:102:PolicyKit daemon:/var/lib/polkit-1:/usr/bin/nologin\n" > "$PROFILE_DIR/airootfs/etc/passwd"
           printf "root:x:0:root\nvideo:x:985:root\nrender:x:989:root\npolkitd:x:102:\nautologin:x:96:root\n" > "$PROFILE_DIR/airootfs/etc/group"
 
-          # 3. LightDM Configuration (ALLOW ROOT LOGIN)
+          # 3. LightDM Configuration (ALLOW ROOT)
+          mkdir -p "$PROFILE_DIR/airootfs/etc/lightdm"
           printf "[Seat:*]\nallow-root=true\ngreeter-session=lightdm-gtk-greeter\nautologin-user=root\nautologin-session=xfce\nuser-session=xfce\nautologin-user-timeout=0\n" > "$PROFILE_DIR/airootfs/etc/lightdm/lightdm.conf"
 
-          # 4. PAM Fix (Allow NULL passwords for the GUI)
-          printf "auth_required pam_unix.so nullok\nauth_required pam_env.so\naccount_required pam_unix.so\npassword_required pam_unix.so\nsession_required pam_unix.so\n" > "$PROFILE_DIR/airootfs/etc/pam.d/lightdm-autologin"
-          printf "auth_required pam_unix.so nullok\naccount_required pam_unix.so\nsession_required pam_unix.so\n" > "$PROFILE_DIR/airootfs/etc/pam.d/lightdm-greeter"
+          # 4. PAM FIX (Correct Syntax: No Underscores)
+          mkdir -p "$PROFILE_DIR/airootfs/etc/pam.d"
+          # These lines use spaces to separate the type (auth) from the control (required)
+          printf "auth      required  pam_unix.so nullok\nauth      required  pam_env.so\naccount   required  pam_unix.so\npassword  required  pam_unix.so\nsession   required  pam_unix.so\n" > "$PROFILE_DIR/airootfs/etc/pam.d/lightdm-autologin"
+          printf "auth      required  pam_unix.so nullok\naccount   required  pam_unix.so\nsession   required  pam_unix.so\n" > "$PROFILE_DIR/airootfs/etc/pam.d/lightdm-greeter"
 
-          # 5. Disable TTY1 autologin to prevent session hijack
+          # 5. Disable TTY1 conflict
+          mkdir -p "$PROFILE_DIR/airootfs/etc/systemd/system/getty@tty1.service.d"
           printf "[Service]\nExecStart=\nExecStart=-/usr/bin/agetty --noclear %%I \$TERM\n" > "$PROFILE_DIR/airootfs/etc/systemd/system/getty@tty1.service.d/autologin.conf"
 
           # 6. Enable Services
           ln -sf /usr/lib/systemd/system/lightdm.service "$PROFILE_DIR/airootfs/etc/systemd/system/display-manager.service"
           ln -sf /usr/lib/systemd/system/NetworkManager.service "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
 
-          # 7. --- START OF ZSTD COMPRESSION MODIFICATIONS (Your Request) ---
+          # 7. --- START OF ZSTD COMPRESSION MODIFICATIONS ---
           sed -i "s|'-comp' 'xz'|'-comp' 'zstd' '-Xcompression-level' '5'|" "$PROFILE_DIR/profiledef.sh"
           sed -i "s|'-Xbcj' 'x86'||" "$PROFILE_DIR/profiledef.sh"
           sed -i "s|'-Xdict-size' '1M'||" "$PROFILE_DIR/profiledef.sh"
           # --- END OF ZSTD COMPRESSION MODIFICATIONS ---
 
-          # 8. Branding & Metadata
+          # 8. Branding & Installer
           sed -i 's|^iso_name=.*|iso_name="auto-arch-xfce"|' "$PROFILE_DIR/profiledef.sh"
           sed -i 's|^iso_label=.*|iso_label="AUTO_ARCH_XFCE"|' "$PROFILE_DIR/profiledef.sh"
-          
-          # 9. Installer, Keymap, and Firmware Hook
           curl -fsSL https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh -o "$PROFILE_DIR/airootfs/root/arch.sh"
           chmod +x "$PROFILE_DIR/airootfs/root/arch.sh"
           
-          mkdir -p "$PROFILE_DIR/airootfs/etc"
+          # Keyboard
           printf "KEYMAP=uk\nXKBLAYOUT=gb\nFONT=ter-922b\n" > "$PROFILE_DIR/airootfs/etc/vconsole.conf"
-
-          mkdir -p "$PROFILE_DIR/airootfs/etc/pacman.d/hooks"
-          printf "[Trigger]\nOperation = Install\nType = Package\nTarget = linux-firmware\n\n[Action]\nDescription = Remove firmware\nWhen = PostTransaction\nExec = /usr/bin/rm -rf /usr/lib/firmware/nvidia /usr/lib/firmware/mrvl\n" > "$PROFILE_DIR/airootfs/etc/pacman.d/hooks/remove-unneeded-fw.hook"
 
           echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Build ISO
         id: build_iso
         run: |
-          OUT="out"
-          mkarchiso -v -o "$OUT" ${{ steps.prepare_profile.outputs.PROFILE_DIR }}/
-          echo "iso_path=$(find "$OUT" -name "*.iso" -print -quit)" >> "$GITHUB_OUTPUT"
+          mkarchiso -v -o out ${{ steps.prepare_profile.outputs.PROFILE_DIR }}/
+          echo "iso_path=$(find out -name "*.iso" -print -quit)" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release
+      - name: Create Release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.build_iso.outputs.iso_path }}
           tag_name: "iso-${{ github.run_id }}"
           name: "Auto Arch with XFCE"
-          body: |
-            ### Auto Arch Build Details
-            - **GUI**: XFCE4 (Automatic root login enabled).
-            - **Compression**: ZSTD Level 5 (Fast build).
-            - **Installer**: `/root/arch.sh` included.
-            - **Keyboard**: UK Layout.
-          prerelease: false
+          body: "Fixed PAM syntax and forced root login."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
