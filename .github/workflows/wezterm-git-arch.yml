@@ -27,7 +27,7 @@ jobs:
             hicolor-icon-theme libxkbcommon-x11 \
             xcb-util-image xcb-util-keysyms xcb-util-wm \
             cmake python fontconfig libx11 wayland libglvnd \
-            libgit2 openssl
+            libgit2 openssl libssh2 lua sqlite
 
       - name: Create unprivileged builder user
         run: |
@@ -51,7 +51,7 @@ jobs:
           arch=(x86_64)
           url="https://github.com/wez/wezterm"
           license=(MIT)
-          depends=(fontconfig libx11 libxcb libxkbcommon wayland zlib libpng libjpeg-turbo libglvnd libgit2 openssl)
+          depends=(fontconfig libx11 libxcb libxkbcommon wayland zlib libpng libjpeg-turbo libglvnd libgit2 openssl libssh2 lua sqlite)
           makedepends=(git rust cargo cmake python)
           source=("wezterm::git+https://github.com/wez/wezterm.git")
           sha256sums=("SKIP")
@@ -63,8 +63,18 @@ jobs:
 
           build() {
             cd "${srcdir}/wezterm"
-            # Fix for the linker error: force use of system libgit2
+            
+            # Force the build to use system libraries to prevent the linker errors 
+            # for lua, sqlite, and ssh2 seen in the logs.
             export LIBGIT2_SYS_USE_PKG_CONFIG=1
+            export LIBSSH2_SYS_USE_PKG_CONFIG=1
+            export LIBSQLITE3_SYS_USE_PKG_CONFIG=1
+            export OPENSSL_NO_VENDOR=1
+            
+            # Explicitly point mlua to the system Lua 5.4 installation
+            export LUA_LIB_NAME=lua
+            export LUA_INC=/usr/include
+            
             cargo build --release
           }
 
@@ -72,6 +82,7 @@ jobs:
             cd "${srcdir}/wezterm"
             install -Dm755 target/release/wezterm "${pkgdir}/usr/bin/wezterm"
             install -Dm755 target/release/wezterm-mux-server "${pkgdir}/usr/bin/wezterm-mux-server"
+            install -Dm755 target/release/wezterm-gui "${pkgdir}/usr/bin/wezterm-gui"
             install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
           }
           EOF
@@ -89,7 +100,9 @@ jobs:
         id: build_meta
         run: |
           cd /home/builder/build
-          final_ver=$(ls *.pkg.tar.zst | cut -d'-' -f2,3)
+          pkg_file=$(ls *.pkg.tar.zst | head -n 1)
+          if [ -z "$pkg_file" ]; then echo "Build failed, no package found" && exit 1; fi
+          final_ver=$(echo $pkg_file | cut -d'-' -f2,3)
           echo "build_tag=$(date '+%Y.%m.%d')-${final_ver}" >> "$GITHUB_OUTPUT"
           echo "build_date=$(date '+%Y-%m-%d %H:%M:%S %Z')" >> "$GITHUB_OUTPUT"
           echo "architecture=$(uname -m)" >> "$GITHUB_OUTPUT"
