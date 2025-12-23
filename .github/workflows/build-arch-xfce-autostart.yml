@@ -1,0 +1,142 @@
+name: Build XFCE/Auto Arch Linux ISO
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_date:
+        description: 'ISO build timestamp (YYYYMMDD_HHMMSS). Leave empty for current time.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux/archlinux:latest
+      options: --privileged
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install archiso, tools & p7zip
+        run: |
+          pacman -Sy --noconfirm \
+            archiso squashfs-tools xorriso dosfstools \
+            p7zip curl util-linux binutils jq
+
+      - name: Prepare XFCE profile
+        id: prepare_profile
+        shell: bash
+        run: |
+          PROFILE=xfce-profile
+          rm -rf "$PROFILE"
+          cp -r /usr/share/archiso/configs/releng "$PROFILE"
+
+          mkdir -p \
+            "$PROFILE/airootfs/root" \
+            "$PROFILE/airootfs/etc/lightdm" \
+            "$PROFILE/airootfs/etc/systemd/system/display-manager.service" \
+            "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants"
+
+          # Add packages to ISO
+          for pkg in \
+            xfce4 xfce4-goodies xorg-server xorg-xinit \
+            lightdm lightdm-gtk-greeter networkmanager \
+            firefox htop iotop gparted network-manager-applet \
+            ncdu
+          do
+            echo "$pkg" >> "$PROFILE/packages.x86_64"
+          done
+
+          # 1. Enable Services (NM and LightDM for Autostart)
+          ln -s /usr/lib/systemd/system/NetworkManager.service \
+            "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
+          ln -s /usr/lib/systemd/system/lightdm.service \
+            "$PROFILE/airootfs/etc/systemd/system/display-manager.service"
+
+          # 2. Configure LightDM Autologin for Root
+          {
+            echo '[Seat:*]'
+            echo 'autologin-user=root'
+            echo 'autologin-session=xfce'
+            echo 'user-session=xfce'
+          } > "$PROFILE/airootfs/etc/lightdm/lightdm.conf"
+
+          # 3. Security group for autologin
+          echo 'autologin:x:96:root' >> "$PROFILE/airootfs/etc/group"
+
+          # 4. Desktop Autostart Items
+          mkdir -p "$PROFILE/airootfs/root/.config/autostart"
+          echo -e "[Desktop Entry]\nType=Application\nName=Network Manager Applet\nExec=nm-applet --indicator\nOnlyShowIn=XFCE;\nTerminal=false\nX-GNOME-Autostart-enabled=true" > "$PROFILE/airootfs/root/.config/autostart/nm-applet.desktop"
+
+          # 5. Set ISO Name (archiso appends the date automatically) and ZSTD Compression
+          sed -i -e 's|^iso_name=.*|iso_name="archlinux-xfce-auto"|' -e 's|^iso_label=.*|iso_label="ARCH_XFCE_AUTO"|' "$PROFILE/profiledef.sh"
+          sed -i "s|'-comp' 'xz'|'-comp' 'zstd' '-Xcompression-level' '5'|" "$PROFILE/profiledef.sh"
+          sed -i "s|'-Xbcj' 'x86'||" "$PROFILE/profiledef.sh"
+          sed -i "s|'-Xdict-size' '1M'||" "$PROFILE/profiledef.sh"
+        
+          # 6. Include install script
+          curl -fsSL https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh -o "$PROFILE/airootfs/root/arch.sh"
+          chmod +x "$PROFILE/airootfs/root/arch.sh"
+
+          # 7. Environment & Keymap
+          echo 'root:x:0:0:root:/root:/bin/bash' > "$PROFILE/airootfs/etc/passwd"
+          echo "KEYMAP=uk" > "$PROFILE/airootfs/etc/vconsole.conf"
+          echo "XKBLAYOUT=gb" >> "$PROFILE/airootfs/etc/vconsole.conf"
+          echo "FONT=ter-922b" >> "$PROFILE/airootfs/etc/vconsole.conf"
+
+          # 8. Pacman hook to strip unneeded firmware
+          mkdir -p "$PROFILE/airootfs/etc/pacman.d/hooks"
+          echo -e "[Trigger]\nOperation = Install\nType = Package\nTarget = linux-firmware\n\n[Action]\nDescription = Remove firmware\nWhen = PostTransaction\nExec = /usr/bin/rm -rf /usr/lib/firmware/nvidia /usr/lib/firmware/mrvl" > "$PROFILE/airootfs/etc/pacman.d/hooks/remove-unneeded-fw.hook"
+
+          echo "profile_dir=$PROFILE" >> "$GITHUB_OUTPUT"
+
+      - name: Determine build timestamp
+        id: ts
+        shell: bash
+        run: |
+          BUILD_TS="${{ github.event.inputs.build_date }}"
+          [ -z "$BUILD_TS" ] && BUILD_TS=$(date '+%Y%m%d_%H%M%S')
+          echo "build_timestamp=$BUILD_TS" >> "$GITHUB_OUTPUT"
+
+      - name: Build the ISO
+        id: build_iso
+        shell: bash
+        run: |
+          OUT=out
+          mkarchiso -v -o "$OUT" "${{ steps.prepare_profile.outputs.profile_dir }}"
+          ISO=$(find "$OUT" -maxdepth 1 -type f -name '*.iso' -print -quit)
+          echo "iso_path=$ISO" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch kernel version
+        id: fetch_kernel
+        shell: bash
+        run: |
+          PKG_JSON=$(curl -fsSL 'https://archlinux.org/packages/core/x86_64/linux/json/')
+          echo "KERNEL_VERSION_REPO=$(echo $PKG_JSON | jq -r '.pkgver')-$(echo $PKG_JSON | jq -r '.pkgrel')" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.build_iso.outputs.iso_path }}
+          tag_name: "iso-${{ steps.ts.outputs.build_timestamp }}"
+          name: "Arch Linux XFCE Auto ISO ${{ steps.ts.outputs.build_timestamp }}"
+          body: |
+            ### Build Information
+            - **Profile**: `xfce-profile` built on `${{ steps.ts.outputs.build_timestamp }}`.
+            - **Kernel**: `${{ steps.fetch_kernel.outputs.KERNEL_VERSION_REPO }}` (Nvidia/Marvell firmware removed).
+            - **Packages**: `htop`, `iotop`, `mc`, `gparted`, `ncdu`, `trizen`.
+
+            ### Usage Instructions
+            - **Environment**: Root shell is `/bin/bash`; installer at `/root/arch.sh`.
+            - **Commands**: XFCE autostarts; use `./arch.sh` in a terminal to install.
+            - **Logging**: Sessions are logged to a timestamped `.log` file.
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
