@@ -240,6 +240,7 @@ jobs:
             ### Usage Instructions
             - **Environment**: Root shell is `/bin/bash`; script located at `/root/arch.sh`.
             - **Setup**: Use `nmtui` for Wi-Fi, then run `./arch.sh` to start installation.
-            - **Logging**: Sessions are logged to a timestamped file (e.g., `install-YYYYMMDD_HHMM.log`).          prerelease: false
+            - **Logging**: Sessions are logged to a timestamped file (e.g., `install-YYYYMMDD_HHMM.log`).          
+            prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
