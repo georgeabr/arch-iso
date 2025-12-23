@@ -224,7 +224,7 @@ jobs:
           path: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
           retention-days: 7
 
-      - name: Create GitHub Release (Optional)
+      - name: Create GitHub Release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
@@ -232,17 +232,14 @@ jobs:
           tag_name: "iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
           name: "Arch Linux CLI ISO ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
           body: |
-            Arch Linux CLI/text-mode ISO built on ${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
-            using the `${{ github.event.inputs.profile_name }}` archiso profile.
-            Includes the `arch.sh` script in `/root/arch.sh`.
-            Root user's default shell set to `/bin/bash`.
-            Includes `htop`, `iotop`, `mc`, `gparted`, `networkmanager`, `ncdu`, `trizen` for AUR.
-            Based on Arch Linux packages available at build time.
-            `Nvidia` and `Marvell` firmware removed.
-            Kernel version (from ISO): `${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}`
-            From a terminal, use `./arch.sh` to start the installation.
-            Use `nmtui` to set up your wireless connection.
-            Installation is logged to a timestamped file like `install-20250418_1431.log`.
-          prerelease: false
+           ### Build Information
+            - **Profile**: `${{ github.event.inputs.profile_name }}` archiso profile.
+            - **Kernel**: `${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}` (Nvidia/Marvell firmware removed).
+            - **Packages**: Includes `htop`, `iotop`, `mc`, `gparted`, `NetworkManager`, `ncdu`, and `trizen`.
+
+            ### Usage Instructions
+            - **Environment**: Root shell is `/bin/bash`; script located at `/root/arch.sh`.
+            - **Setup**: Use `nmtui` for Wi-Fi, then run `./arch.sh` to start installation.
+            - **Logging**: Sessions are logged to a timestamped file (e.g., `install-YYYYMMDD_HHMM.log`).          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
