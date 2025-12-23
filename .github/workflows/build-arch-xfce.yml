@@ -191,15 +191,13 @@ jobs:
           tag_name: "iso-${{ steps.ts.outputs.build_timestamp }}"
           name: "Arch Linux XFCE ISO ${{ steps.ts.outputs.build_timestamp }}"
           body: |
-            Arch Linux ISO built on ${{ steps.ts.outputs.build_timestamp }}
-            using the `xfce-profile`.
-            Includes the `arch.sh` script in `/root/arch.sh`.
-            Root user's default shell set to `/bin/bash`.
-            Includes `htop`, `iotop`, `mc`, `gparted`, `ncdu`, `trizen` for AUR.
-            Based on Arch Linux packages available at build time.
-            `Nvidia` and `Marvell` firmware removed.
-            Kernel version (from Arch repo): `${{ steps.fetch_kernel.outputs.KERNEL_VERSION_REPO }}`
-            Use `startx` to launch XFCE.
-            From a terminal, use `./arch.sh` to start the installation.
-            Installation is logged to a timestamped file like `install-20250418_1431.log`.
+            ### Build Information
+            - **Profile**: `xfce-profile` built on `${{ steps.ts.outputs.build_timestamp }}`.
+            - **Kernel**: `${{ steps.fetch_kernel.outputs.KERNEL_VERSION_REPO }}` (Nvidia/Marvell firmware removed).
+            - **Packages**: Includes `htop`, `iotop`, `mc`, `gparted`, `ncdu`, and `trizen`.
+
+            ### Usage Instructions
+            - **Environment**: Root shell is `/bin/bash`; installer at `/root/arch.sh`.
+            - **Commands**: Run `startx` for XFCE or `./arch.sh` to begin installation.
+            - **Logging**: All sessions are logged to a timestamped `.log` file.
           prerelease: false
