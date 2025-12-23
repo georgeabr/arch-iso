@@ -1,4 +1,4 @@
-name: Build Arch Linux ISO with XFCE
+name: Build auto Arch Linux ISO with XFCE
 
 on:
   workflow_dispatch:
