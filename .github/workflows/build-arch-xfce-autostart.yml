@@ -37,13 +37,13 @@ jobs:
           rm -rf "$PROFILE"
           cp -r /usr/share/archiso/configs/releng "$PROFILE"
 
-          mkdir -p \
-            "$PROFILE/airootfs/root/.config/autostart" \
-            "$PROFILE/airootfs/etc/lightdm" \
-            "$PROFILE/airootfs/etc/systemd/system/getty@tty1.service.d"
+          # Create necessary directory structure
+          mkdir -p "$PROFILE/airootfs/root/.config/autostart"
+          mkdir -p "$PROFILE/airootfs/etc/lightdm"
+          mkdir -p "$PROFILE/airootfs/etc/systemd/system/getty@tty1.service.d"
+          mkdir -p "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants"
 
           # 1. Add Essential GUI and Auth packages
-          # polkit is mandatory; polkit-gnome provides the agent
           for pkg in \
             xfce4 xfce4-goodies xorg-server lightdm lightdm-gtk-greeter \
             polkit polkit-gnome networkmanager network-manager-applet \
@@ -52,59 +52,39 @@ jobs:
             echo "$pkg" >> "$PROFILE/packages.x86_64"
           done
 
-          # 2. THE "SHIT-PREVENTION" FIX: Create mandatory system users/groups
-          # Without these, polkitd fails to spawn (Invalid Argument / Unknown User)
-          mkdir -p "$PROFILE/airootfs/etc"
-          {
-            echo 'root:x:0:0:root:/root:/bin/bash'
-            echo 'polkitd:x:102:102:PolicyKit daemon:/var/lib/polkit-1:/usr/bin/nologin'
-          } > "$PROFILE/airootfs/etc/passwd"
+          # 2. Fix Authorization Manager (Create polkitd user/group manually)
+          # This prevents: "polkit.service failed to determine credentials for user polkitd"
+          echo 'polkitd:x:102:102:PolicyKit daemon:/var/lib/polkit-1:/usr/bin/nologin' >> "$PROFILE/airootfs/etc/passwd"
+          echo 'polkitd:x:102:' >> "$PROFILE/airootfs/etc/group"
+          echo 'autologin:x:96:root' >> "$PROFILE/airootfs/etc/group"
 
-          {
-            echo 'root:x:0:root'
-            echo 'polkitd:x:102:'
-            echo 'autologin:x:96:root'
-          } > "$PROFILE/airootfs/etc/group"
+          # 3. Disable TTY1 Autologin conflict
+          # Using printf to avoid heredoc syntax issues in YAML
+          printf "[Service]\nExecStart=\nExecStart=-/usr/bin/agetty --autologin root --noclear %%I \$TERM\n" \
+            > "$PROFILE/airootfs/etc/systemd/system/getty@tty1.service.d/autologin.conf"
 
-          # 3. DISABLE TTY1 Autologin conflict
-          cat <<EOF > "$PROFILE/airootfs/etc/systemd/system/getty@tty1.service.d/autologin.conf"
-[Service]
-ExecStart=
-ExecStart=-/usr/bin/agetty --autologin root --noclear %I \$TERM
-EOF
-
-          # 4. Enable LightDM and NetworkManager
-          ln -s /usr/lib/systemd/system/lightdm.service \
+          # 4. Enable Services
+          ln -sf /usr/lib/systemd/system/lightdm.service \
             "$PROFILE/airootfs/etc/systemd/system/display-manager.service"
-          ln -s /usr/lib/systemd/system/NetworkManager.service \
+          ln -sf /usr/lib/systemd/system/NetworkManager.service \
             "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
 
-          # 5. Configure LightDM for TRUE Autologin
-          {
-            echo '[Seat:*]'
-            echo 'greeter-session=lightdm-gtk-greeter'
-            echo 'autologin-user=root'
-            echo 'autologin-session=xfce'
-            echo 'user-session=xfce'
-            echo 'autologin-user-timeout=0'
-          } > "$PROFILE/airootfs/etc/lightdm/lightdm.conf"
+          # 5. Configure LightDM for Autologin
+          printf "[Seat:*]\ngreeter-session=lightdm-gtk-greeter\nautologin-user=root\nautologin-session=xfce\nuser-session=xfce\nautologin-user-timeout=0\n" \
+            > "$PROFILE/airootfs/etc/lightdm/lightdm.conf"
 
-          # 6. Polkit Agent Autostart
-          cat <<EOF > "$PROFILE/airootfs/root/.config/autostart/polkit-gnome.desktop"
-[Desktop Entry]
-Type=Application
-Name=Polkit Gnome
-Exec=/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
-OnlyShowIn=XFCE;
-EOF
+          # 6. Polkit Agent Autostart entry
+          printf "[Desktop Entry]\nType=Application\nName=Polkit\nExec=/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1\nOnlyShowIn=XFCE;\n" \
+            > "$PROFILE/airootfs/root/.config/autostart/polkit-gnome.desktop"
 
-          # 7. ISO Naming and Compression
-          sed -i -e 's|^iso_name=.*|iso_name="archlinux-xfce-auto"|' -e 's|^iso_label=.*|iso_label="ARCH_XFCE_AUTO"|' "$PROFILE/profiledef.sh"
+          # 7. ISO Naming and ZSTD
+          sed -i 's|^iso_name=.*|iso_name="archlinux-xfce-auto"|' "$PROFILE/profiledef.sh"
+          sed -i 's|^iso_label=.*|iso_label="ARCH_XFCE_AUTO"|' "$PROFILE/profiledef.sh"
           sed -i "s|'-comp' 'xz'|'-comp' 'zstd' '-Xcompression-level' '5'|" "$PROFILE/profiledef.sh"
           sed -i "s|'-Xbcj' 'x86'||" "$PROFILE/profiledef.sh"
           sed -i "s|'-Xdict-size' '1M'||" "$PROFILE/profiledef.sh"
         
-          # 8. Script and Shell setup
+          # 8. Include install script
           curl -fsSL https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh -o "$PROFILE/airootfs/root/arch.sh"
           chmod +x "$PROFILE/airootfs/root/arch.sh"
           
