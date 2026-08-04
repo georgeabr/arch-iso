@@ -58,7 +58,11 @@ jobs:
           # 2. Add the custom script (arch.sh)
           mkdir -p "$(dirname "$SCRIPT_DEST_PATH")"
           echo "Downloading $SCRIPT_URL to $SCRIPT_DEST_PATH"
-          curl -sSL "$SCRIPT_URL" -o "$SCRIPT_DEST_PATH"
+          curl -fsSL "$SCRIPT_URL" -o "$SCRIPT_DEST_PATH"
+          if [ ! -s "$SCRIPT_DEST_PATH" ]; then
+            echo "Error: downloaded script at $SCRIPT_DEST_PATH is missing or empty."
+            exit 1
+          fi
           echo "Setting executable permissions for $SCRIPT_DEST_PATH"
           chmod +x "$SCRIPT_DEST_PATH"
 
@@ -91,11 +95,11 @@ jobs:
 
 
           mkdir -p \
-            "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants"          
+            "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants"          
 
           # Enable NetworkManager service on boot
           ln -s /usr/lib/systemd/system/NetworkManager.service \
-            "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"          
+            "$PROFILE_DIR/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"          
 
           # --- START OF ZSTD COMPRESSION MODIFICATIONS (Broken Down) ---
           # Step 1: Change the compression algorithm from 'xz' to 'zstd'
