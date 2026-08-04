@@ -87,6 +87,7 @@ jobs:
               echo "iotop" >> "$PACKAGES_FILE"
               echo "ncdu" >> "$PACKAGES_FILE"
               echo "networkmanager" >> "$PACKAGES_FILE"
+              echo "mc" >> "$PACKAGES_FILE"
               grep -E '^(htop|iotop)$' "$PACKAGES_FILE" || echo "htop or iotop not found in $PACKAGES_FILE after append. Check file format."
           else
               echo "Warning: $PACKAGES_FILE not found. Cannot add htop or iotop."
@@ -240,7 +241,7 @@ jobs:
            ### Build Information
             - **Profile**: `${{ github.event.inputs.profile_name }}` archiso profile.
             - **Kernel**: `${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}` (Nvidia/Marvell firmware removed).
-            - **Packages**: Includes `htop`, `iotop`, `mc`, `gparted`, `NetworkManager`, `ncdu`, `sbctl`, and `trizen`.
+            - **Packages**: Includes `htop`, `iotop`, `mc`, `NetworkManager`, `ncdu`, `sbctl`, and `trizen`.
 
             ### Usage Instructions
             - **Environment**: Root shell is `/bin/bash`; script located at `/root/arch.sh`.
