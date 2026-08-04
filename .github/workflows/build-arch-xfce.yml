@@ -46,7 +46,7 @@ jobs:
             xfce4 xfce4-goodies xorg-server xorg-xinit \
             lightdm lightdm-gtk-greeter networkmanager \
             firefox htop iotop gparted network-manager-applet \
-            ncdu
+            ncdu sbctl
           do
             echo "$pkg" >> "$PROFILE/packages.x86_64"
           done
@@ -194,7 +194,7 @@ jobs:
             ### Build Information
             - **Profile**: `xfce-profile` built on `${{ steps.ts.outputs.build_timestamp }}`.
             - **Kernel**: `${{ steps.fetch_kernel.outputs.KERNEL_VERSION_REPO }}` (Nvidia/Marvell firmware removed).
-            - **Packages**: Includes `htop`, `iotop`, `mc`, `gparted`, `ncdu`, and `trizen`.
+            - **Packages**: Includes `htop`, `iotop`, `mc`, `gparted`, `ncdu`, `sbctl`, and `trizen`.
 
             ### Usage Instructions
             - **Environment**: Root shell is `/bin/bash`; installer at `/root/arch.sh`.
