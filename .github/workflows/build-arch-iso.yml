@@ -26,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install archiso and build dependencies within the container
         shell: bash
@@ -79,6 +79,7 @@ jobs:
           if [ -f "$PACKAGES_FILE" ]; then
               echo "Adding htop and iotop to $PACKAGES_FILE"
               echo "htop" >> "$PACKAGES_FILE"
+              echo "sbctl" >> "$PACKAGES_FILE"
               echo "iotop" >> "$PACKAGES_FILE"
               echo "ncdu" >> "$PACKAGES_FILE"
               echo "networkmanager" >> "$PACKAGES_FILE"
@@ -218,7 +219,7 @@ jobs:
         run: ls -lh ${{ steps.build_metadata.outputs.ISO_OUTPUT_DIR }}
 
       - name: Upload ISO as Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: archlinux-custom-iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}
           path: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
@@ -226,7 +227,7 @@ jobs:
 
       - name: Create GitHub Release
         if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ steps.build_iso_step.outputs.ACTUAL_ISO_FILE }}
           tag_name: "iso-${{ steps.build_metadata.outputs.BUILD_TIMESTAMP }}"
@@ -235,7 +236,7 @@ jobs:
            ### Build Information
             - **Profile**: `${{ github.event.inputs.profile_name }}` archiso profile.
             - **Kernel**: `${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}` (Nvidia/Marvell firmware removed).
-            - **Packages**: Includes `htop`, `iotop`, `mc`, `gparted`, `NetworkManager`, `ncdu`, and `trizen`.
+            - **Packages**: Includes `htop`, `iotop`, `mc`, `gparted`, `NetworkManager`, `ncdu`, `sbctl`, and `trizen`.
 
             ### Usage Instructions
             - **Environment**: Root shell is `/bin/bash`; script located at `/root/arch.sh`.
