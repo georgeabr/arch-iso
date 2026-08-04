@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install build dependencies
         run: |
@@ -58,7 +58,7 @@ jobs:
           echo "ts=$(date '+%Y%m%d_%H%M%S')" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.build_meta.outputs.ts }}
           name: ${{ steps.build_meta.outputs.pkg_ver }}
