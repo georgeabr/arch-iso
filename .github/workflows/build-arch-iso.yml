@@ -31,7 +31,8 @@ jobs:
       - name: Install archiso and build dependencies within the container
         shell: bash
         run: |
-          pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux
+          pacman -Sy --noconfirm archiso git squashfs-tools xorriso dosfstools curl util-linux \
+            gcc pkgconf readline
 
       - name: Prepare Archiso Build Profile, Add Custom Script, Set Root Shell, and Add Extra Packages
         id: prepare_profile
@@ -71,6 +72,16 @@ jobs:
             >> "$PROFILE_DIR/airootfs/root/.bash_profile"
           echo 'systemctl start NetworkManager.service' \
             >> "$PROFILE_DIR/airootfs/root/.bash_profile"
+
+          BP="$PROFILE_DIR/airootfs/root/.bash_profile"
+          echo "printf '\n\e[1;36m========================================================\e[0m\n'" >> "$BP"
+          echo "printf '\e[1;36m   Arch Linux Live Environment\e[0m\n'" >> "$BP"
+          echo "printf '\e[1;36m========================================================\e[0m\n\n'" >> "$BP"
+          echo "printf '  \e[1;32mdiskviz\e[0m   - inspect and partition your disks\n'" >> "$BP"
+          echo "printf '  \e[1;32m./arch.sh\e[0m - start the Arch installation\n\n'" >> "$BP"
+          echo "printf '  Tip: run \e[1;32mdiskviz\e[0m first if you need help partitioning,\n'" >> "$BP"
+          echo "printf '       then run \e[1;32m./arch.sh\e[0m to begin.\n'" >> "$BP"
+          echo "printf '\e[1;36m========================================================\e[0m\n\n'" >> "$BP"
 
           # 3. Ensure root's default shell in the ISO is /bin/bash
           PASSWD_FILE="$PROFILE_DIR/airootfs/etc/passwd"
@@ -118,6 +129,13 @@ jobs:
           sed -i "s|'-Xdict-size' '1M'||" "$PROFILE_DIR/profiledef.sh"
           # --- END OF ZSTD COMPRESSION MODIFICATIONS (Broken Down) ---
 
+          # Force /root/arch.sh and /usr/local/bin/diskviz permissions at
+          # pack time. mkarchiso applies the file_permissions array
+          # authoritatively when building the squashfs (part of its
+          # reproducible-build normalisation pass), which resets any chmod
+          # done on disk for paths not explicitly listed here.
+          sed -i '/file_permissions=(/a\  ["/root/arch.sh"]="0:0:755"\n  ["/usr/local/bin/diskviz"]="0:0:755"' "$PROFILE_DIR/profiledef.sh"
+
           # Set console keymap & font
           mkdir -p "$PROFILE_DIR/airootfs/etc"
           echo "KEYMAP=uk"    > "$PROFILE_DIR/airootfs/etc/vconsole.conf"
@@ -152,6 +170,32 @@ jobs:
           cat "${{ steps.prepare_profile.outputs.PROFILE_DIR }}/profiledef.sh"
           echo "---------------------------------------------------------"
 
+      - name: Build diskviz binary
+        id: build_diskviz
+        shell: bash
+        run: |
+          PROFILE="${{ steps.prepare_profile.outputs.PROFILE_DIR }}"
+          BIN_DIR="$PROFILE/airootfs/usr/local/bin"
+          mkdir -p "$BIN_DIR"
+
+          curl -fsSL \
+            https://raw.githubusercontent.com/georgeabr/systems-programming/refs/heads/main/diskviz/diskviz.c \
+            -o diskviz.c
+
+          gcc -O2 -Wall $(pkg-config --cflags --libs fdisk blkid) -lreadline \
+            -o "$BIN_DIR/diskviz" diskviz.c
+
+          chmod +x "$BIN_DIR/diskviz"
+          echo "diskviz_path=$BIN_DIR/diskviz" >> "$GITHUB_OUTPUT"
+
+      - name: Verify diskviz binary
+        shell: bash
+        run: |
+          echo "--- diskviz binary details ---"
+          ls -lha "${{ steps.build_diskviz.outputs.diskviz_path }}"
+          file "${{ steps.build_diskviz.outputs.diskviz_path }}"
+          echo "-------------------------------"
+
       - name: Define Build Metadata and Output Directory
         id: build_metadata
         shell: bash
@@ -182,6 +226,40 @@ jobs:
           fi
           echo "Found ISO: $ACTUAL_ISO_FILE"
           echo "ACTUAL_ISO_FILE=$ACTUAL_ISO_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Verify arch.sh and diskviz permissions inside squashfs
+        shell: bash
+        run: |
+          # mkarchiso builds airootfs.sfs inside its work directory (default
+          # ./work, since we don't pass -w) BEFORE xorriso packs it into the
+          # ISO. That work dir isn't removed unless -r/--clean is passed, so
+          # the squashfs is on disk under the workspace root, not under out/.
+          SQFS=$(find . -type f -name 'airootfs.sfs' -print -quit)
+          [ -z "$SQFS" ] && { echo "ERROR: airootfs.sfs not found anywhere in the workspace!" >&2; exit 1; }
+          echo "Found squashfs: $SQFS"
+
+          EXTRACT_DIR=$(mktemp -d)
+          unsquashfs -d "$EXTRACT_DIR/extracted" "$SQFS" root/arch.sh usr/local/bin/diskviz
+
+          echo "--- arch.sh permissions as packed inside the squashfs ---"
+          ls -lha "$EXTRACT_DIR/extracted/root/arch.sh"
+          file "$EXTRACT_DIR/extracted/root/arch.sh"
+
+          echo "--- diskviz permissions as packed inside the squashfs ---"
+          ls -lha "$EXTRACT_DIR/extracted/usr/local/bin/diskviz"
+          file "$EXTRACT_DIR/extracted/usr/local/bin/diskviz"
+          echo "-----------------------------------------------------------"
+
+          [ -x "$EXTRACT_DIR/extracted/root/arch.sh" ] || {
+            echo "ERROR: arch.sh is not executable inside the squashfs!" >&2
+            exit 1
+          }
+          [ -x "$EXTRACT_DIR/extracted/usr/local/bin/diskviz" ] || {
+            echo "ERROR: diskviz is not executable inside the squashfs!" >&2
+            exit 1
+          }
+
+          rm -rf "$EXTRACT_DIR"
 
       - name: Extract Kernel Version from ISO
         id: extract_kernel_version
@@ -242,10 +320,12 @@ jobs:
             - **Profile**: `${{ github.event.inputs.profile_name }}` archiso profile.
             - **Kernel**: `${{ steps.extract_kernel_version.outputs.KERNEL_VERSION_ISO }}` (Nvidia/Marvell firmware removed).
             - **Packages**: Includes `htop`, `iotop`, `mc`, `NetworkManager`, `ncdu`, `sbctl`, and `trizen`.
+            - **Custom tools**: `diskviz` (disk partitioning helper) compiled from [georgeabr/systems-programming](https://github.com/georgeabr/systems-programming/blob/main/diskviz/diskviz.c) and installed to `/usr/local/bin`.
 
             ### Usage Instructions
             - **Environment**: Root shell is `/bin/bash`; script located at `/root/arch.sh`.
-            - **Setup**: Use `nmtui` for Wi-Fi, then run `./arch.sh` to start installation.
+            - **On login**: a banner is shown pointing to `diskviz` (for partitioning) and `./arch.sh` (to start the install).
+            - **Setup**: Use `nmtui` for Wi-Fi, then run `diskviz` first if you need help partitioning, then `./arch.sh` to start installation.
             - **Logging**: Sessions are logged to a timestamped file (e.g., `install-YYYYMMDD_HHMM.log`).          
           prerelease: false
         env:
