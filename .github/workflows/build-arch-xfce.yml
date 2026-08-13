@@ -198,45 +198,33 @@ jobs:
           [ -z "$ISO" ] && { echo "ERROR: ISO not found!" >&2; exit 1; }
           echo "iso_path=$ISO" >> "$GITHUB_OUTPUT"
 
-      - name: Verify arch.sh permissions inside squashfs
+      - name: Verify arch.sh and diskviz permissions inside squashfs
         shell: bash
         run: |
-          OUT=out
-          SQFS=$(find "$OUT" -type f -name 'airootfs.sfs' -print -quit)
-          [ -z "$SQFS" ] && { echo "ERROR: airootfs.sfs not found!" >&2; exit 1; }
+          # mkarchiso builds airootfs.sfs inside its work directory (default
+          # ./work, since we don't pass -w) BEFORE xorriso packs it into the
+          # ISO. That work dir isn't removed unless -r/--clean is passed, so
+          # the squashfs is on disk under the workspace root, not under out/.
+          SQFS=$(find . -type f -name 'airootfs.sfs' -print -quit)
+          [ -z "$SQFS" ] && { echo "ERROR: airootfs.sfs not found anywhere in the workspace!" >&2; exit 1; }
           echo "Found squashfs: $SQFS"
 
           EXTRACT_DIR=$(mktemp -d)
-          unsquashfs -d "$EXTRACT_DIR/extracted" "$SQFS" root/arch.sh
+          unsquashfs -d "$EXTRACT_DIR/extracted" "$SQFS" root/arch.sh usr/local/bin/diskviz
 
           echo "--- arch.sh permissions as packed inside the squashfs ---"
           ls -lha "$EXTRACT_DIR/extracted/root/arch.sh"
           file "$EXTRACT_DIR/extracted/root/arch.sh"
-          echo "-------------------------------------------------------"
-
-          [ -x "$EXTRACT_DIR/extracted/root/arch.sh" ] || {
-            echo "ERROR: arch.sh is not executable inside the squashfs!" >&2
-            exit 1
-          }
-
-          rm -rf "$EXTRACT_DIR"
-
-      - name: Verify diskviz permissions inside squashfs
-        shell: bash
-        run: |
-          OUT=out
-          SQFS=$(find "$OUT" -type f -name 'airootfs.sfs' -print -quit)
-          [ -z "$SQFS" ] && { echo "ERROR: airootfs.sfs not found!" >&2; exit 1; }
-          echo "Found squashfs: $SQFS"
-
-          EXTRACT_DIR=$(mktemp -d)
-          unsquashfs -d "$EXTRACT_DIR/extracted" "$SQFS" usr/local/bin/diskviz
 
           echo "--- diskviz permissions as packed inside the squashfs ---"
           ls -lha "$EXTRACT_DIR/extracted/usr/local/bin/diskviz"
           file "$EXTRACT_DIR/extracted/usr/local/bin/diskviz"
           echo "-----------------------------------------------------------"
 
+          [ -x "$EXTRACT_DIR/extracted/root/arch.sh" ] || {
+            echo "ERROR: arch.sh is not executable inside the squashfs!" >&2
+            exit 1
+          }
           [ -x "$EXTRACT_DIR/extracted/usr/local/bin/diskviz" ] || {
             echo "ERROR: diskviz is not executable inside the squashfs!" >&2
             exit 1
