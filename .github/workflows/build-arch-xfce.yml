@@ -106,6 +106,16 @@ jobs:
           echo 'systemctl start NetworkManager.service' \
             >> "$PROFILE/airootfs/root/.bash_profile"
 
+          BP="$PROFILE/airootfs/root/.bash_profile"
+          echo "printf '\n\e[1;36m========================================================\e[0m\n'" >> "$BP"
+          echo "printf '\e[1;36m   Arch Linux Live Environment\e[0m\n'" >> "$BP"
+          echo "printf '\e[1;36m========================================================\e[0m\n\n'" >> "$BP"
+          echo "printf '  \e[1;32mdiskviz\e[0m   - inspect and partition your disks\n'" >> "$BP"
+          echo "printf '  \e[1;32m./arch.sh\e[0m - start the Arch installation\n\n'" >> "$BP"
+          echo "printf '  Tip: run \e[1;32mdiskviz\e[0m first if you need help partitioning,\n'" >> "$BP"
+          echo "printf '       then run \e[1;32m./arch.sh\e[0m to begin.\n'" >> "$BP"
+          echo "printf '\e[1;36m========================================================\e[0m\n\n'" >> "$BP"
+
 
           echo 'root:x:0:0:root:/root:/bin/bash' \
             > "$PROFILE/airootfs/etc/passwd"
@@ -262,10 +272,13 @@ jobs:
             ### Build Information
             - **Profile**: `xfce-profile` built on `${{ steps.ts.outputs.build_timestamp }}`.
             - **Kernel**: `${{ steps.fetch_kernel.outputs.KERNEL_VERSION_REPO }}` (Nvidia/Marvell firmware removed).
-            - **Packages**: Includes `htop`, `iotop`, `mc`, `gparted`, `ncdu`, `sbctl`, and `trizen`.
+            - **Packages**: Includes `xfce4`, `xfce4-goodies`, `firefox`, `htop`, `iotop`, `mc`, `gparted`, `ncdu`, and `sbctl` (`mc` via the releng base profile this is built from).
+            - **Custom tools**: `diskviz` (disk partitioning helper) compiled from [georgeabr/systems-programming](https://github.com/georgeabr/systems-programming/blob/main/diskviz/diskviz.c) and installed to `/usr/local/bin`.
 
             ### Usage Instructions
             - **Environment**: Root shell is `/bin/bash`; installer at `/root/arch.sh`.
-            - **Commands**: Run `startx` for XFCE or `./arch.sh` to begin installation.
+            - **On login**: a banner is shown pointing to `diskviz` (for partitioning) and `./arch.sh` (to start the install).
+            - **Commands**: Run `diskviz` first if you need help partitioning, then `./arch.sh` to begin installation, or `startx` for XFCE.
             - **Logging**: All sessions are logged to a timestamped `.log` file.
+            - **Note**: `trizen` is not on this ISO — it's built later by `arch-2.sh` during the actual install.
           prerelease: false
