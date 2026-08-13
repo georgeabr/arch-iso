@@ -27,7 +27,8 @@ jobs:
         run: |
           pacman -Sy --noconfirm \
             archiso squashfs-tools xorriso dosfstools \
-            p7zip curl util-linux binutils jq
+            p7zip curl util-linux binutils jq \
+            gcc pkgconf readline
 
       - name: Prepare XFCE profile
         id: prepare_profile
@@ -86,6 +87,12 @@ jobs:
           # This removes the '-Xdict-size' '1M' part which is also not used by zstd.
           sed -i "s|'-Xdict-size' '1M'||" "$PROFILE/profiledef.sh"
           # --- END OF ZSTD COMPRESSION MODIFICATIONS (Broken Down) ---
+
+          # Force /root/arch.sh permissions at pack time. mkarchiso applies
+          # the file_permissions array authoritatively when building the
+          # squashfs, which can override any chmod done here on disk if the
+          # path isn't explicitly listed.
+          sed -i '/file_permissions=(/a\  ["/root/arch.sh"]="0:0:755"' "$PROFILE/profiledef.sh"
 
           curl -fsSL \
             https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh \
@@ -147,6 +154,32 @@ jobs:
           cat "${{ steps.prepare_profile.outputs.profile_dir }}/profiledef.sh"
           echo "---------------------------------------------------------"
 
+      - name: Build diskviz binary
+        id: build_diskviz
+        shell: bash
+        run: |
+          PROFILE="${{ steps.prepare_profile.outputs.profile_dir }}"
+          BIN_DIR="$PROFILE/airootfs/usr/local/bin"
+          mkdir -p "$BIN_DIR"
+
+          curl -fsSL \
+            https://raw.githubusercontent.com/georgeabr/systems-programming/refs/heads/main/diskviz/diskviz.c \
+            -o diskviz.c
+
+          gcc -O2 -Wall $(pkg-config --cflags --libs fdisk blkid) -lreadline \
+            -o "$BIN_DIR/diskviz" diskviz.c
+
+          chmod +x "$BIN_DIR/diskviz"
+          echo "diskviz_path=$BIN_DIR/diskviz" >> "$GITHUB_OUTPUT"
+
+      - name: Verify diskviz binary
+        shell: bash
+        run: |
+          echo "--- diskviz binary details ---"
+          ls -lha "${{ steps.build_diskviz.outputs.diskviz_path }}"
+          file "${{ steps.build_diskviz.outputs.diskviz_path }}"
+          echo "-------------------------------"
+
       - name: Determine build timestamp
         id: ts
         shell: bash
@@ -164,6 +197,52 @@ jobs:
           ISO=$(find "$OUT" -maxdepth 1 -type f -name '*.iso' -print -quit)
           [ -z "$ISO" ] && { echo "ERROR: ISO not found!" >&2; exit 1; }
           echo "iso_path=$ISO" >> "$GITHUB_OUTPUT"
+
+      - name: Verify arch.sh permissions inside squashfs
+        shell: bash
+        run: |
+          OUT=out
+          SQFS=$(find "$OUT" -type f -name 'airootfs.sfs' -print -quit)
+          [ -z "$SQFS" ] && { echo "ERROR: airootfs.sfs not found!" >&2; exit 1; }
+          echo "Found squashfs: $SQFS"
+
+          EXTRACT_DIR=$(mktemp -d)
+          unsquashfs -d "$EXTRACT_DIR/extracted" "$SQFS" root/arch.sh
+
+          echo "--- arch.sh permissions as packed inside the squashfs ---"
+          ls -lha "$EXTRACT_DIR/extracted/root/arch.sh"
+          file "$EXTRACT_DIR/extracted/root/arch.sh"
+          echo "-------------------------------------------------------"
+
+          [ -x "$EXTRACT_DIR/extracted/root/arch.sh" ] || {
+            echo "ERROR: arch.sh is not executable inside the squashfs!" >&2
+            exit 1
+          }
+
+          rm -rf "$EXTRACT_DIR"
+
+      - name: Verify diskviz permissions inside squashfs
+        shell: bash
+        run: |
+          OUT=out
+          SQFS=$(find "$OUT" -type f -name 'airootfs.sfs' -print -quit)
+          [ -z "$SQFS" ] && { echo "ERROR: airootfs.sfs not found!" >&2; exit 1; }
+          echo "Found squashfs: $SQFS"
+
+          EXTRACT_DIR=$(mktemp -d)
+          unsquashfs -d "$EXTRACT_DIR/extracted" "$SQFS" usr/local/bin/diskviz
+
+          echo "--- diskviz permissions as packed inside the squashfs ---"
+          ls -lha "$EXTRACT_DIR/extracted/usr/local/bin/diskviz"
+          file "$EXTRACT_DIR/extracted/usr/local/bin/diskviz"
+          echo "-----------------------------------------------------------"
+
+          [ -x "$EXTRACT_DIR/extracted/usr/local/bin/diskviz" ] || {
+            echo "ERROR: diskviz is not executable inside the squashfs!" >&2
+            exit 1
+          }
+
+          rm -rf "$EXTRACT_DIR"
 
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v7
