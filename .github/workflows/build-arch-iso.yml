@@ -104,6 +104,17 @@ jobs:
               echo "Warning: $PACKAGES_FILE not found. Cannot add htop or iotop."
           fi
 
+          # 5. Strip non-English locale data (keeps en*, e.g. en_GB) so pacman
+          #    never extracts the other-language .mo catalogs in the first place.
+          PACMAN_CONF="$PROFILE_DIR/pacman.conf"
+          if [ -f "$PACMAN_CONF" ]; then
+              echo "Adding locale NoExtract rules to $PACMAN_CONF"
+              sed -i '/^\[options\]/a NoExtract = usr/share/locale/*\nNoExtract = !usr/share/locale/en*\nNoExtract = !usr/share/locale/locale.alias' "$PACMAN_CONF"
+              grep -A3 '^\[options\]' "$PACMAN_CONF"
+          else
+              echo "Warning: $PACMAN_CONF not found. Cannot add locale NoExtract rules."
+          fi
+
 
 
           mkdir -p \
@@ -158,7 +169,7 @@ jobs:
           echo '[Action]'                                                         >> "$HOOK_FILE"
           echo 'Description = Remove unneeded firmware directories'               >> "$HOOK_FILE"
           echo 'When = PostTransaction'                                           >> "$HOOK_FILE"
-          echo 'Exec = /bin/sh -c "echo ---- /usr/lib/firmware listing ----; ls -lha /usr/lib/firmware/; echo ---- /usr/lib/firmware sizes ----; du -sh /usr/lib/firmware/*/ 2>/dev/null; echo -----------------------------------; rm -rf /usr/lib/firmware/nvidia /usr/lib/firmware/mrvl"' >> "$HOOK_FILE"
+          echo 'Exec = /usr/bin/rm -rf /usr/lib/firmware/nvidia /usr/lib/firmware/mrvl' >> "$HOOK_FILE"
           # ────────────────────────────────────────────────          
 
           echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
@@ -258,6 +269,24 @@ jobs:
             echo "ERROR: diskviz is not executable inside the squashfs!" >&2
             exit 1
           }
+
+          rm -rf "$EXTRACT_DIR"
+
+      - name: Inspect /usr/share/locale in the built ISO
+        shell: bash
+        run: |
+          SQFS=$(find . -type f -name 'airootfs.sfs' -print -quit)
+          [ -z "$SQFS" ] && { echo "ERROR: airootfs.sfs not found anywhere in the workspace!" >&2; exit 1; }
+          echo "Found squashfs: $SQFS"
+
+          EXTRACT_DIR=$(mktemp -d)
+          unsquashfs -d "$EXTRACT_DIR/extracted" "$SQFS" usr/share/locale
+
+          echo "---- /usr/share/locale total size ----"
+          du -sh "$EXTRACT_DIR/extracted/usr/share/locale/"
+
+          echo "---- /usr/share/locale per-language sizes ----"
+          du -sh "$EXTRACT_DIR/extracted/usr/share/locale/"*/ | sort -rh
 
           rm -rf "$EXTRACT_DIR"
 
