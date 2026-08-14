@@ -158,7 +158,7 @@ jobs:
           echo '[Action]'                                                         >> "$HOOK_FILE"
           echo 'Description = Remove unneeded firmware directories'               >> "$HOOK_FILE"
           echo 'When = PostTransaction'                                           >> "$HOOK_FILE"
-          echo 'Exec = /usr/bin/rm -rf /usr/lib/firmware/nvidia /usr/lib/firmware/mrvl' >> "$HOOK_FILE"
+          echo 'Exec = /usr/bin/rm -rf /usr/lib/firmware/nvidia /usr/lib/firmware/mrvl /usr/lib/firmware/qcom' >> "$HOOK_FILE"
           # ────────────────────────────────────────────────          
 
           echo "PROFILE_DIR=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
