@@ -88,20 +88,26 @@ jobs:
           sed -i "s|'-Xdict-size' '1M'||" "$PROFILE/profiledef.sh"
           # --- END OF ZSTD COMPRESSION MODIFICATIONS (Broken Down) ---
 
-          # Force /root/arch.sh and /usr/local/bin/diskviz permissions at
+          # Force /root/arch.sh, /root/eficlean.sh and /usr/local/bin/diskviz permissions at
           # pack time. mkarchiso applies the file_permissions array
           # authoritatively when building the squashfs (part of its
           # reproducible-build normalisation pass), which resets any chmod
           # done on disk for paths not explicitly listed here.
-          sed -i '/file_permissions=(/a\  ["/root/arch.sh"]="0:0:755"\n  ["/usr/local/bin/diskviz"]="0:0:755"' "$PROFILE/profiledef.sh"
+          sed -i '/file_permissions=(/a\  ["/root/arch.sh"]="0:0:755"\n  ["/root/eficlean.sh"]="0:0:755"\n  ["/usr/local/bin/diskviz"]="0:0:755"' "$PROFILE/profiledef.sh"
 
           curl -fsSL \
             https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/arch.sh \
             -o "$PROFILE/airootfs/root/arch.sh"
           chmod +x "$PROFILE/airootfs/root/arch.sh"
 
-          # Ensure it'll stay executable on first login shell (TTY auto-login)
-          echo 'chmod +x /root/arch.sh' \
+          # Download eficlean
+          curl -fsSL \
+            https://raw.githubusercontent.com/georgeabr/arch/refs/heads/master/eficlean.sh \
+            -o "$PROFILE/airootfs/root/eficlean.sh"
+          chmod +x "$PROFILE/airootfs/root/eficlean.sh"
+
+          # Ensure scripts stay executable on first login shell (TTY auto-login)
+          echo 'chmod +x /root/arch.sh /root/eficlean.sh' \
             >> "$PROFILE/airootfs/root/.bash_profile"
           echo 'systemctl start NetworkManager.service' \
             >> "$PROFILE/airootfs/root/.bash_profile"
@@ -110,8 +116,9 @@ jobs:
           echo "printf '\n\e[1;36m========================================================\e[0m\n'" >> "$BP"
           echo "printf '\e[1;36m   Arch Linux Live Environment\e[0m\n'" >> "$BP"
           echo "printf '\e[1;36m========================================================\e[0m\n\n'" >> "$BP"
-          echo "printf '  \e[1;32mdiskviz\e[0m   - inspect and partition your disks\n'" >> "$BP"
-          echo "printf '  \e[1;32m./arch.sh\e[0m - start the Arch installation\n\n'" >> "$BP"
+          echo "printf '  \e[1;32mdiskviz\e[0m     - inspect and partition your disks\n'" >> "$BP"
+          echo "printf '  \e[1;32m./arch.sh\e[0m   - start the Arch installation\n'" >> "$BP"
+          echo "printf '  \e[1;32m./eficlean.sh\e[0m - manage EFI boot entries\n\n'" >> "$BP"
           echo "printf '  Tip: run \e[1;32mdiskviz\e[0m first if you need help partitioning,\n'" >> "$BP"
           echo "printf '       then run \e[1;32m./arch.sh\e[0m to begin.\n'" >> "$BP"
           echo "printf '\e[1;36m========================================================\e[0m\n\n'" >> "$BP"
@@ -209,7 +216,7 @@ jobs:
           [ -z "$ISO" ] && { echo "ERROR: ISO not found!" >&2; exit 1; }
           echo "iso_path=$ISO" >> "$GITHUB_OUTPUT"
 
-      - name: Verify arch.sh and diskviz permissions inside squashfs
+      - name: Verify arch.sh, eficlean.sh and diskviz permissions inside squashfs
         shell: bash
         run: |
           # mkarchiso builds airootfs.sfs inside its work directory (default
@@ -221,11 +228,15 @@ jobs:
           echo "Found squashfs: $SQFS"
 
           EXTRACT_DIR=$(mktemp -d)
-          unsquashfs -d "$EXTRACT_DIR/extracted" "$SQFS" root/arch.sh usr/local/bin/diskviz
+          unsquashfs -d "$EXTRACT_DIR/extracted" "$SQFS" root/arch.sh root/eficlean.sh usr/local/bin/diskviz
 
           echo "--- arch.sh permissions as packed inside the squashfs ---"
           ls -lha "$EXTRACT_DIR/extracted/root/arch.sh"
           file "$EXTRACT_DIR/extracted/root/arch.sh"
+
+          echo "--- eficlean.sh permissions as packed inside the squashfs ---"
+          ls -lha "$EXTRACT_DIR/extracted/root/eficlean.sh"
+          file "$EXTRACT_DIR/extracted/root/eficlean.sh"
 
           echo "--- diskviz permissions as packed inside the squashfs ---"
           ls -lha "$EXTRACT_DIR/extracted/usr/local/bin/diskviz"
@@ -234,6 +245,10 @@ jobs:
 
           [ -x "$EXTRACT_DIR/extracted/root/arch.sh" ] || {
             echo "ERROR: arch.sh is not executable inside the squashfs!" >&2
+            exit 1
+          }
+          [ -x "$EXTRACT_DIR/extracted/root/eficlean.sh" ] || {
+            echo "ERROR: eficlean.sh is not executable inside the squashfs!" >&2
             exit 1
           }
           [ -x "$EXTRACT_DIR/extracted/usr/local/bin/diskviz" ] || {
@@ -273,12 +288,14 @@ jobs:
             - **Profile**: `xfce-profile` built on `${{ steps.ts.outputs.build_timestamp }}`.
             - **Kernel**: `${{ steps.fetch_kernel.outputs.KERNEL_VERSION_REPO }}` (Nvidia/Marvell firmware removed).
             - **Packages**: Includes `xfce4`, `xfce4-goodies`, `firefox`, `htop`, `iotop`, `mc`, `gparted`, `ncdu`, and `sbctl` (`mc` via the releng base profile this is built from).
-            - **Custom tools**: `diskviz` (disk partitioning helper) compiled from [georgeabr/systems-programming](https://github.com/georgeabr/systems-programming/blob/main/diskviz/diskviz.c) and installed to `/usr/local/bin`.
+            - **Custom tools**: 
+              - `diskviz` (disk partitioning helper) compiled from [georgeabr/systems-programming](https://github.com/georgeabr/systems-programming/blob/main/diskviz/diskviz.c) and installed to `/usr/local/bin`.
+              - `eficlean` (EFI boot entry manager) from [georgeabr/arch](https://github.com/georgeabr/arch/blob/master/eficlean.sh) and installed to `/root`.
 
             ### Usage Instructions
-            - **Environment**: Root shell is `/bin/bash`; installer at `/root/arch.sh`.
-            - **On login**: a banner is shown pointing to `diskviz` (for partitioning) and `./arch.sh` (to start the install).
-            - **Commands**: Run `diskviz` first if you need help partitioning, then `./arch.sh` to begin installation, or `startx` for XFCE.
+            - **Environment**: Root shell is `/bin/bash`; installer at `/root/arch.sh`, boot manager at `/root/eficlean.sh`.
+            - **On login**: a banner is shown pointing to `diskviz` (for partitioning), `./arch.sh` (to start the install), and `./eficlean.sh` (to manage EFI boot entries).
+            - **Commands**: Run `diskviz` first if you need help partitioning, `./eficlean.sh` to clean up boot entries, then `./arch.sh` to begin installation, or `startx` for XFCE.
             - **Logging**: All sessions are logged to a timestamped `.log` file.
-            - **Note**: `trizen` is not on this ISO — it's built later by `arch-2.sh` during the actual install.
+            - **Note**: `trizen` is not on this ISO — it's installed by `arch-2.sh` from a compiled package.
           prerelease: false
